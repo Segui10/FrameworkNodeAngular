@@ -7,6 +7,7 @@ class ListCtrl {
     
     var scope = this;
     scope.computer= [];
+    scope.shop=[];
 
     Computerservice.getAll().then(
       (obj) => {
@@ -16,7 +17,7 @@ class ListCtrl {
         });
         console.log(scope.computer);
       }
-    );  
+    );
    }
   }
   

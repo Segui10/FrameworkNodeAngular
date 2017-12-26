@@ -1,8 +1,10 @@
 <div class="home-page" >
-  
+  <div class="ofertas"></div>
   <div ng-repeat="c in scope.computer">
-    <div>
-        <div>{{c.name}}</div>
+    <div class="tarjeta">
+        <div class="imagen"><img src="{{c.picture}}" alt="" height="150px" width="150px"></div>
+        <div class="nombre">{{c.name}}</div>
+        <a  ui-sref-active="active" ui-sref="app.details" class="menuToggle"><span>Details</span></a>        
     </div>
 </div>
   

@@ -11,5 +11,8 @@ listModule.config(ListConfig);
 import ListCtrl from './list.controller';
 listModule.controller('ListCtrl', ListCtrl);
 
+import DetailsCtrl from './list.details.controller';
+listModule.controller('DetailsCtrl', ListCtrl);
+
 export default listModule;
 

@@ -40235,7 +40235,7 @@ _angular2.default.bootstrap(document, ['app'], {
   strictDi: true
 });
 
-},{"./article":10,"./auth":13,"./components":20,"./config/app.config":23,"./config/app.constants":24,"./config/app.run":25,"./config/app.templates":26,"./contact":30,"./editor":33,"./home":36,"./layout":39,"./list":40,"./services":47,"./settings":52,"angular":3,"angular-ui-router":1}],6:[function(require,module,exports){
+},{"./article":10,"./auth":13,"./components":20,"./config/app.config":23,"./config/app.constants":24,"./config/app.run":25,"./config/app.templates":26,"./contact":30,"./editor":33,"./home":36,"./layout":39,"./list":40,"./services":48,"./settings":53,"angular":3,"angular-ui-router":1}],6:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41146,8 +41146,9 @@ angular.module("templates", []).run(["$templateCache", function ($templateCache)
   $templateCache.put("home/home.html", "<!-- Banner -->\n<section id=\"banner\">\n	<div class=\"inner\">\n		<h2>Spectral</h2>\n		<ul class=\"actions\">\n			<li><a href=\"#/\" class=\"button special\">Activate</a></li>\n		</ul>\n	</div>\n	<a href=\"#products\" class=\"more scrolly\">Componentes</a>\n</section>\n\n<!-- One -->\n<section id=\"one\" class=\"wrapper style1 special\">\n	<div class=\"inner\">\n		<input type=\"text\" name=\"\" ng-model=\"keywords\" id=\"\" placeholder=\"Search your favorite products\">\n		<input type=\"button\" class=\"button fit\" ng-click=\"search()\" value=\"Search\">\n	</div>\n</section>\n\n<!-- Three -->\n<section id=\"three\" class=\"wrapper style3 special\">\n	<div class=\"inner\">\n		<h1>Categorias</h1>\n		<ul class=\"features\">\n			<li><a href=\"#/oferta/procesador\" >\n				<h1>Procesadores</h1>\n			</a></li>\n			<li><a href=\"#/oferta/placaBase\">\n				<h1>Placas Base</h1>\n			</a></li>\n			<li><a href=\"#/oferta/discoDuro\">\n				<h1>Discos Duros</h1>\n			</a></li>\n			<li><a href=\"#/oferta/tarjetaGrafica\">\n				<h1>Gráficas</h1>\n			</a></li>\n			<li><a href=\"#/oferta/ram\">\n				<h1>Memoria RAM</h1>\n			</a></li>\n			<li><a href=\"#/oferta/grabadora\">\n				<h1>Grabadoras</h1>\n			</a></li>\n			<li><a href=\"#/oferta/disquetera\">\n				<h1>Disqueteras</h1>\n			</a></li>\n			<li><a href=\"#/oferta/multilector\">\n				<h1>Multilectores</h1>\n			</a></li>\n			<li><a href=\"#/oferta/tarjetaSonido\">\n				<h1>Sonido</h1>\n			</a></li>\n			<li><a href=\"#/oferta/torre\">\n				<h1>Torres</h1>\n			</a></li>\n			<li><a href=\"#/oferta/ventilacion\">\n				<h1>Ventilación</h1>\n			</a></li>\n			<li><a href=\"#/oferta/fuenteAlimentacion\">\n				<h1>Fuentes</h1>\n			</a></li>\n		</ul>\n	</div>\n</section>\n\n\n\n<!-- Two -->\n<section id=\"two\" class=\"wrapper alt style2\">\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Magna primis lobortis<br />\n			sed ullamcorper</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Tortor dolore feugiat<br />\n			elementum magna</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Augue eleifend aliquet<br />\n			sed condimentum</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n</section>\n\n\n\n<!-- CTA -->\n<section id=\"cta\" class=\"wrapper style4\">\n	<div class=\"inner\">\n		<header>\n			<h2>Arcue ut vel commodo</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum endrerit imperdiet amet eleifend fringilla.</p>\n		</header>\n		<ul class=\"actions vertical\">\n			<li><a href=\"#\" class=\"button fit special\">Activate</a></li>\n			<li><a href=\"#\" class=\"button fit\">Learn More</a></li>\n		</ul>\n	</div>\n</section>");
   $templateCache.put("layout/app-view.html", "<app-header></app-header>\n\n<div ui-view></div>\n\n<app-footer></app-footer>\n");
   $templateCache.put("layout/footer.html", "<div>\n  <footer id=\"footer\">\n      <ul class=\"icons\">\n          <li><a href=\"#/\" class=\"icon fa-twitter\"><span class=\"label\">Twitter</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-facebook\"><span class=\"label\">Facebook</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-instagram\"><span class=\"label\">Instagram</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-dribbble\"><span class=\"label\">Dribbble</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-envelope-o\"><span class=\"label\">Email</span></a></li>\n      </ul>\n      <ul class=\"copyright\">\n          <li>&copy; Untitled</li><li>Design: <a href=\"http://html5up.net\">HTML5 UP</a></li>\n      </ul>\n  </footer>\n</div>");
-  $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a href=\"index.html\">Spectral</a></h1>\n          <nav id=\"nav\">\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.contact\" class=\"menuToggle\"><span>Contact</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"menuToggle\"><span>Home</span></a>\n                  <a ui-sref-active=\"active\" ui-sref=\"app.list\" class=\"menuToggle\"><span>Ofertas</span></a>\n                  <a href=\'#/ofertas\' ng-show=\"misofertasV\">Mis ofertas</a>\n                      <a href=\'#/admin\' ng-show=\"adminV\">Administrar</a>\n                  <!-- LogProf -->\n                      <a id=\"acceder\" ng-show=\"accederV\" href=\"#/\" class=\"button special\" ng-click=\"open()\"  >Acceder</a>\n                      <a id=\'profile\' ng-show=\"profileV\" href=\'#/user/profile\'><img ng-show=\"profileV\" id=\'menuImg\' class=\'icon rounded\' src=\'{{avatar}}\'/>{{nombre}}</a>\n                      <a id=\'logout\' ng-show=\"logoutV\" ng-click=\'logout()\' >Log Out</a> -->\n          </nav>\n      </header>\n  </div> \n\n ");
-  $templateCache.put("list/list.html", "<div class=\"home-page\" >\n  \n  <div ng-repeat=\"c in scope.computer\">\n    <div>\n        <div>{{c.name}}</div>\n    </div>\n</div>\n  \n  </div>\n  ");
+  $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a href=\"index.html\">Spectral</a></h1>\n          <nav id=\"nav\">\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.contact\" class=\"menuToggle\"><span>Contact</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"menuToggle\"><span>Home</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.list\" class=\"menuToggle\"><span>Ofertas</span></a>\n                  <a href=\'#/ofertas\' ng-show=\"misofertasV\">Mis ofertas</a>\n                      <a href=\'#/admin\' ng-show=\"adminV\">Administrar</a>\n                  <!-- LogProf -->\n                      <a id=\"acceder\" ng-show=\"accederV\" href=\"#/\" class=\"button special\" ng-click=\"open()\"  >Acceder</a>\n                      <a id=\'profile\' ng-show=\"profileV\" href=\'#/user/profile\'><img ng-show=\"profileV\" id=\'menuImg\' class=\'icon rounded\' src=\'{{avatar}}\'/>{{nombre}}</a>\n                      <a id=\'logout\' ng-show=\"logoutV\" ng-click=\'logout()\' >Log Out</a> -->\n          </nav>\n      </header>\n  </div> \n\n ");
+  $templateCache.put("list/list.details.html", "<div>hola</div>");
+  $templateCache.put("list/list.html", "<div class=\"home-page\" >\n  <div class=\"ofertas\"></div>\n  <div ng-repeat=\"c in scope.computer\">\n    <div class=\"tarjeta\">\n        <div class=\"imagen\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n        <div class=\"nombre\">{{c.name}}</div>\n        <a  ui-sref-active=\"active\" ui-sref=\"app.details\" class=\"menuToggle\"><span>Details</span></a>        \n    </div>\n</div>\n  \n  </div>\n  ");
   $templateCache.put("profile/profile-articles.html", "<article-list limit=\"5\" list-config=\"$ctrl.listConfig\"></article-list>\n");
   $templateCache.put("profile/profile.html", "<div class=\"profile-page\">\n\n  <!-- User\'s basic info & action buttons -->\n  <div class=\"user-info\">\n    <div class=\"container\">\n      <div class=\"row\">\n        <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n          <img ng-src=\"{{::$ctrl.profile.image}}\" class=\"user-img\" />\n          <h4 ng-bind=\"::$ctrl.profile.username\"></h4>\n          <p ng-bind=\"::$ctrl.profile.bio\"></p>\n\n          <a ui-sref=\"app.settings\"\n            class=\"btn btn-sm btn-outline-secondary action-btn\"\n            ng-show=\"$ctrl.isUser\">\n            <i class=\"ion-gear-a\"></i> Edit Profile Settings\n          </a>\n\n          <follow-btn user=\"$ctrl.profile\" ng-hide=\"$ctrl.isUser\"></follow-btn>\n\n        </div>\n      </div>\n    </div>\n  </div>\n\n  <!-- Container where User\'s posts & favs are list w/ toggle tabs -->\n  <div class=\"container\">\n    <div class=\"row\">\n\n      <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n        <!-- Tabs for switching between author articles & favorites -->\n        <div class=\"articles-toggle\">\n          <ul class=\"nav nav-pills outline-active\">\n\n            <li class=\"nav-item\">\n              <a class=\"nav-link active\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.main({username: $ctrl.profile.username})\">\n                My Articles\n              </a>\n            </li>\n            \n            <li class=\"nav-item\">\n              <a class=\"nav-link\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.favorites({username: $ctrl.profile.username})\">\n                Favorited Articles\n              </a>\n            </li>\n\n          </ul>\n        </div>\n\n        <!-- List of articles -->\n        <div ui-view></div>\n\n\n      </div>\n\n    <!-- End row & container divs -->\n    </div>\n  </div>\n\n</div>\n");
   $templateCache.put("settings/settings.html", "<div class=\"settings-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n\n        <h1 class=\"text-xs-center\">Your Settings</h1>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                type=\"text\"\n                placeholder=\"URL of profile picture\"\n                ng-model=\"$ctrl.formData.image\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <textarea class=\"form-control form-control-lg\"\n                rows=\"8\"\n                placeholder=\"Short bio about you\"\n                ng-model=\"$ctrl.formData.bio\">\n              </textarea>\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"New Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\">\n              Update Settings\n            </button>\n\n          </fieldset>\n        </form>\n\n        <!-- Line break for logout button -->\n        <hr />\n\n        <button class=\"btn btn-outline-danger\"\n          ng-click=\"$ctrl.logout()\">\n          Or click here to logout.\n        </button>\n\n      </div>\n    </div>\n  </div>\n</div>\n");
@@ -41654,6 +41655,10 @@ var _list3 = require('./list.controller');
 
 var _list4 = _interopRequireDefault(_list3);
 
+var _listDetails = require('./list.details.controller');
+
+var _listDetails2 = _interopRequireDefault(_listDetails);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 // Create the module where our functionality can attach to
@@ -41667,9 +41672,11 @@ listModule.config(_list2.default);
 
 listModule.controller('ListCtrl', _list4.default);
 
+listModule.controller('DetailsCtrl', _list4.default);
+
 exports.default = listModule;
 
-},{"./list.config":41,"./list.controller":42,"angular":3}],41:[function(require,module,exports){
+},{"./list.config":41,"./list.controller":42,"./list.details.controller":43,"angular":3}],41:[function(require,module,exports){
 'use strict';
 
 ListConfig.$inject = ["$stateProvider"];
@@ -41685,6 +41692,11 @@ function ListConfig($stateProvider) {
     controller: 'ListCtrl',
     controllerAs: 'scope',
     templateUrl: 'list/list.html'
+  }).state('app.details', {
+    url: '/details',
+    controller: 'ListCtrl',
+    controllerAs: 'scope',
+    templateUrl: 'list/list.details.html'
   });
 };
 
@@ -41710,6 +41722,7 @@ var ListCtrl = function ListCtrl(User, Computerservice, AppConstants, $scope) {
 
   var scope = this;
   scope.computer = [];
+  scope.shop = [];
 
   Computerservice.getAll().then(function (obj) {
     console.log(obj.computer);
@@ -41724,6 +41737,39 @@ ListCtrl.$inject = ["User", "Computerservice", "AppConstants", "$scope"];
 exports.default = ListCtrl;
 
 },{}],43:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var DetailsCtrl = function DetailsCtrl(User, $stateParams, AppConstants, $scope) {
+  'ngInject';
+
+  _classCallCheck(this, DetailsCtrl);
+
+  this.appName = AppConstants.appName;
+  this._$scope = $scope;
+
+  var scope = this;
+  scope.computer = [];
+  scope.shop = [];
+
+  Computerservice.getAll().then(function (obj) {
+    console.log(obj.computer);
+    obj.computer.forEach(function (param) {
+      scope.computer.push(param);
+    });
+    console.log(scope.computer);
+  });
+};
+DetailsCtrl.$inject = ["User", "$stateParams", "AppConstants", "$scope"];
+
+exports.default = DetailsCtrl;
+
+},{}],44:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41839,7 +41885,7 @@ var Articles = function () {
 
 exports.default = Articles;
 
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41900,7 +41946,7 @@ var Comments = function () {
 
 exports.default = Comments;
 
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41942,7 +41988,7 @@ var Computer = function () {
 
 exports.default = Computer;
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41987,7 +42033,7 @@ var Contactservice = function () {
 
 exports.default = Contactservice;
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42053,7 +42099,7 @@ servicesModule.service('Computerservice', _computer2.default);
 
 exports.default = servicesModule;
 
-},{"./articles.service":43,"./comments.service":44,"./computer.service":45,"./contact-service":46,"./jwt.service":48,"./profile.service":49,"./tags.service":50,"./user.service":51,"angular":3}],48:[function(require,module,exports){
+},{"./articles.service":44,"./comments.service":45,"./computer.service":46,"./contact-service":47,"./jwt.service":49,"./profile.service":50,"./tags.service":51,"./user.service":52,"angular":3}],49:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42097,7 +42143,7 @@ var JWT = function () {
 
 exports.default = JWT;
 
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42156,7 +42202,7 @@ var Profile = function () {
 
 exports.default = Profile;
 
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42195,7 +42241,7 @@ var Tags = function () {
 
 exports.default = Tags;
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42316,7 +42362,7 @@ var User = function () {
 
 exports.default = User;
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42349,7 +42395,7 @@ settingsModule.controller('SettingsCtrl', _settings4.default);
 
 exports.default = settingsModule;
 
-},{"./settings.config":53,"./settings.controller":54,"angular":3}],53:[function(require,module,exports){
+},{"./settings.config":54,"./settings.controller":55,"angular":3}],54:[function(require,module,exports){
 'use strict';
 
 SettingsConfig.$inject = ["$stateProvider"];
@@ -42375,7 +42421,7 @@ function SettingsConfig($stateProvider) {
 
 exports.default = SettingsConfig;
 
-},{}],54:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
