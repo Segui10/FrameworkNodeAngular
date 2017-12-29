@@ -10,10 +10,16 @@ function ListConfig($stateProvider) {
       templateUrl: 'list/list.html'
     })
     .state('app.details', {
-      url: '/details',
-      controller: 'ListCtrl',
+      url: '/details/:id',
+      controller: 'DetailsCtrl',
       controllerAs: 'scope',
-      templateUrl: 'list/list.details.html'
+      templateUrl: 'list/list.details.html',
+      resolve: {
+        details:function($stateParams){
+          //console.log($stateParams);
+          return $stateParams;
+        }
+      }
     })
   };
   

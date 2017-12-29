@@ -1,22 +1,9 @@
 class DetailsCtrl {
-    constructor(User, $stateParams, AppConstants, $scope) {
+    constructor(User, $stateParams, AppConstants, $scope, details) {
       'ngInject';
-      this.appName = AppConstants.appName;
-      this._$scope = $scope;
-      
-      var scope = this;
-      scope.computer= [];
-      scope.shop=[];
-  
-      Computerservice.getAll().then(
-        (obj) => {
-          console.log(obj.computer);
-          obj.computer.forEach(function(param){
-            scope.computer.push(param);
-          });
-          console.log(scope.computer);
-        }
-      );
+      this.details = details;
+
+      console.log(details.id);
      }
     }
     

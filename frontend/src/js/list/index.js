@@ -12,7 +12,7 @@ import ListCtrl from './list.controller';
 listModule.controller('ListCtrl', ListCtrl);
 
 import DetailsCtrl from './list.details.controller';
-listModule.controller('DetailsCtrl', ListCtrl);
+listModule.controller('DetailsCtrl', DetailsCtrl);
 
 export default listModule;
 
