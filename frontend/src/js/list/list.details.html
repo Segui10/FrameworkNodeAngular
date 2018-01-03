@@ -1,1 +1,12 @@
-<div>hola</div>
+<div class="home-page" >
+    <div ng-repeat="c in scope.computer">
+      <div class="contentof">
+          <div class="imageof"><img src="{{c.picture}}" alt="" height="150px" width="150px"></div>
+          <div class="nombre">{{c.name}}</div>
+          <div class="nombre">{{c.date}}</div>
+          <div class="nombre">{{c.marca}}</div>
+          <div class="nombre">{{c.status}}</div>
+          <div class="nombre">{{c.type}}</div>
+  </div>
+    
+    </div>

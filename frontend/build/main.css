@@ -3861,10 +3861,12 @@
 	}
 
 	.contentof{
+		margin-top: 50px;
 		border: 6px solid #3a3c6a;
 		border-radius: 25px;
 		width: 70%;
-		margin-left: 20px;
+		height: 600px;
+		margin-left: 10%;
 		padding: 10px;
 		background-color: #505393;
 	}
@@ -3875,6 +3877,11 @@
 	height: 300px;
 	width: 300px;
 	float: left;
+}
+
+.imageof img{
+	height: 300px;
+	width: 300px;
 }
 
 .ofertas{

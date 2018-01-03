@@ -41147,7 +41147,7 @@ angular.module("templates", []).run(["$templateCache", function ($templateCache)
   $templateCache.put("layout/app-view.html", "<app-header></app-header>\n\n<div ui-view></div>\n\n<app-footer></app-footer>\n");
   $templateCache.put("layout/footer.html", "<div>\n  <footer id=\"footer\">\n      <ul class=\"icons\">\n          <li><a href=\"#/\" class=\"icon fa-twitter\"><span class=\"label\">Twitter</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-facebook\"><span class=\"label\">Facebook</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-instagram\"><span class=\"label\">Instagram</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-dribbble\"><span class=\"label\">Dribbble</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-envelope-o\"><span class=\"label\">Email</span></a></li>\n      </ul>\n      <ul class=\"copyright\">\n          <li>&copy; Untitled</li><li>Design: <a href=\"http://html5up.net\">HTML5 UP</a></li>\n      </ul>\n  </footer>\n</div>");
   $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a href=\"index.html\">Spectral</a></h1>\n          <nav id=\"nav\">\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.contact\" class=\"menuToggle\"><span>Contact</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"menuToggle\"><span>Home</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.list\" class=\"menuToggle\"><span>Ofertas</span></a>\n                  <a href=\'#/ofertas\' ng-show=\"misofertasV\">Mis ofertas</a>\n                      <a href=\'#/admin\' ng-show=\"adminV\">Administrar</a>\n                  <!-- LogProf -->\n                      <a id=\"acceder\" ng-show=\"accederV\" href=\"#/\" class=\"button special\" ng-click=\"open()\"  >Acceder</a>\n                      <a id=\'profile\' ng-show=\"profileV\" href=\'#/user/profile\'><img ng-show=\"profileV\" id=\'menuImg\' class=\'icon rounded\' src=\'{{avatar}}\'/>{{nombre}}</a>\n                      <a id=\'logout\' ng-show=\"logoutV\" ng-click=\'logout()\' >Log Out</a> -->\n          </nav>\n      </header>\n  </div> \n\n ");
-  $templateCache.put("list/list.details.html", "<div>hola</div>");
+  $templateCache.put("list/list.details.html", "<div class=\"home-page\" >\n    <div ng-repeat=\"c in scope.computer\">\n      <div class=\"contentof\">\n          <div class=\"imageof\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n          <div class=\"nombre\">{{c.name}}</div>\n          <div class=\"nombre\">{{c.date}}</div>\n          <div class=\"nombre\">{{c.marca}}</div>\n          <div class=\"nombre\">{{c.status}}</div>\n          <div class=\"nombre\">{{c.type}}</div>\n  </div>\n    \n    </div>");
   $templateCache.put("list/list.html", "<div class=\"home-page\" >\n  <div class=\"ofertas\"></div>\n  <div ng-repeat=\"c in scope.computer\">\n    <div class=\"tarjeta\">\n        <div class=\"imagen\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n        <div class=\"nombre\">{{c.name}}</div>\n        <div>{{c._id}}</div>\n        <a  ui-sref-active=\"active\" ui-sref=\"app.details({ id: c._id})\" class=\"menuToggle\"><span>Details</span></a>        \n    </div>\n</div>\n  \n  </div>\n  ");
   $templateCache.put("profile/profile-articles.html", "<article-list limit=\"5\" list-config=\"$ctrl.listConfig\"></article-list>\n");
   $templateCache.put("profile/profile.html", "<div class=\"profile-page\">\n\n  <!-- User\'s basic info & action buttons -->\n  <div class=\"user-info\">\n    <div class=\"container\">\n      <div class=\"row\">\n        <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n          <img ng-src=\"{{::$ctrl.profile.image}}\" class=\"user-img\" />\n          <h4 ng-bind=\"::$ctrl.profile.username\"></h4>\n          <p ng-bind=\"::$ctrl.profile.bio\"></p>\n\n          <a ui-sref=\"app.settings\"\n            class=\"btn btn-sm btn-outline-secondary action-btn\"\n            ng-show=\"$ctrl.isUser\">\n            <i class=\"ion-gear-a\"></i> Edit Profile Settings\n          </a>\n\n          <follow-btn user=\"$ctrl.profile\" ng-hide=\"$ctrl.isUser\"></follow-btn>\n\n        </div>\n      </div>\n    </div>\n  </div>\n\n  <!-- Container where User\'s posts & favs are list w/ toggle tabs -->\n  <div class=\"container\">\n    <div class=\"row\">\n\n      <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n        <!-- Tabs for switching between author articles & favorites -->\n        <div class=\"articles-toggle\">\n          <ul class=\"nav nav-pills outline-active\">\n\n            <li class=\"nav-item\">\n              <a class=\"nav-link active\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.main({username: $ctrl.profile.username})\">\n                My Articles\n              </a>\n            </li>\n            \n            <li class=\"nav-item\">\n              <a class=\"nav-link\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.favorites({username: $ctrl.profile.username})\">\n                Favorited Articles\n              </a>\n            </li>\n\n          </ul>\n        </div>\n\n        <!-- List of articles -->\n        <div ui-view></div>\n\n\n      </div>\n\n    <!-- End row & container divs -->\n    </div>\n  </div>\n\n</div>\n");
@@ -41751,16 +41751,31 @@ Object.defineProperty(exports, "__esModule", {
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var DetailsCtrl = function DetailsCtrl(User, $stateParams, AppConstants, $scope, details) {
+var DetailsCtrl = function DetailsCtrl(User, $stateParams, AppConstants, $scope, details, Computerservice) {
   'ngInject';
 
   _classCallCheck(this, DetailsCtrl);
 
   this.details = details;
+  this._Computerservice = Computerservice;
+  this._$scope = $scope;
+
+  var scope = this;
+  scope.computer = [];
+  scope.shop = [];
+
+  Computerservice.getAll().then(function (obj) {
+    obj.computer.forEach(function (param) {
+      if (param._id == details.id) {
+        scope.computer.push(param);
+      }
+    });
+    console.log(scope.computer);
+  });
 
   console.log(details.id);
 };
-DetailsCtrl.$inject = ["User", "$stateParams", "AppConstants", "$scope", "details"];
+DetailsCtrl.$inject = ["User", "$stateParams", "AppConstants", "$scope", "details", "Computerservice"];
 
 exports.default = DetailsCtrl;
 
