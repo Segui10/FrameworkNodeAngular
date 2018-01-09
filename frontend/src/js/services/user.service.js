@@ -29,6 +29,7 @@ export default class User {
   }
 
   update(fields) {
+    console.log(fields);
     return this._$http({
       url:  this._AppConstants.api + '/user',
       method: 'PUT',

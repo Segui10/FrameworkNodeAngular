@@ -1,10 +1,16 @@
 <!DOCTYPE html>
-<html>
+<html >
   <head>
     <meta charset="utf-8">
     <title ng-bind="pageTitle"></title>
     <link href="font-awesome.min.css" rel="stylesheet" type="text/css">
     <link rel="stylesheet" href="./main.css">
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
+    <script src="https://rawgit.com/allenhwkim/angularjs-google-maps/master/testapp/scripts/markers.js"></script>
+    <script src="https://rawgit.com/allenhwkim/angularjs-google-maps/master/testapp/scripts/markerclusterer.js"></script>
+    <link rel="stylesheet" href="https://npmcdn.com/angular-toastr/dist/angular-toastr.css" />
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/dropzone/4.2.0/min/dropzone.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/dropzone/4.0.1/dropzone.css" />
   </head>
   <body>
     <div ui-view></div>

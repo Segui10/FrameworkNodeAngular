@@ -3833,11 +3833,11 @@
 		float: left;
 		padding-top: 5px;
 		background-color: #505393;
-		height: 200px;
+		height: 210px;
 		width: 49%;
 	}
 	.imagen{
-		margin: 5px;
+		margin: 1%;
 		margin-top: 0px;
 		height: 150px;
 		width: 150px;
@@ -3848,25 +3848,22 @@
 		margin-top: 0px;
 		font-size: 20px;
 		padding: 5px;
-		padding-right: 120px;
-		margin-left: 10px;
+		width: 98%;
+		margin-left: 1%;
 		background-color: #3a3c6a;
-		float: left;
+		margin-bottom: 10px;
+		display: inline-block;
 	}
-
-	
 
 	#pager{
 		padding-right: 80%;
 	}
 
 	.contentof{
-		margin-top: 50px;
 		border: 6px solid #3a3c6a;
 		border-radius: 25px;
 		width: 70%;
-		height: 600px;
-		margin-left: 10%;
+		margin-left: 20px;
 		padding: 10px;
 		background-color: #505393;
 	}
@@ -3879,13 +3876,19 @@
 	float: left;
 }
 
-.imageof img{
-	height: 300px;
-	width: 300px;
+.listb{
+	float: right;
+	margin-right: 1%;
+	padding: 60px;
+	background-color: #6A6C9C;
 }
 
-.ofertas{
-	background-color: gray;
-	width: 100%;
-	height: 400px !important;
+.morei{
+margin-right: 2%;
+width: 40%;
+padding: 1%;
+height: 150px;
+float: right;
+background-color: #3a3c6a;
+
 }

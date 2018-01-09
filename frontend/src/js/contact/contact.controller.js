@@ -1,11 +1,12 @@
 class ContactCtrl {
-  constructor( AppConstants, $scope, Contactservice) {
+  constructor( AppConstants, $scope, Contactservice, $state, toastr) {
     'ngInject';
 
-    
     this.appName = AppConstants.appName;
     this._$scope = $scope;
     this._Contactservice = Contactservice;
+    this._$state = $state;
+    this._toastr = toastr;
 
     console.log('contact');
     var scope = this;
@@ -31,17 +32,19 @@ class ContactCtrl {
       this._Contactservice.sendEmail(data).then(function (response) {
         console.log(response);
                         if (response) {
-                            //logger.success('Email sent correctly!');
+                            console.log('Email sent correctly!');
                             scope.resultMessageOk = 'Email sent correctly!';
-                            //$timeout(function () {
+                            setTimeout(function () {
+                              toastr.success('Se envio correctamente','Email');
                                 scope.resultMessageOk = '';
-                                $state.go('main');
-                           // }, 3000);
+                                $state.go('app.home');
+                            }, 3000);
                         } else {
+                          toastr.error('Ha habido algun error intentalo mas tarde','Email');
                             scope.resultMessageFail = 'Problem sending your email, please try again later!';
-                            // $timeout(function () {
+                             setTimeout(function () {
                                 scope.resultMessageFail = '';
-                            // }, 3000);
+                             }, 3000);
                         }
       });
     };

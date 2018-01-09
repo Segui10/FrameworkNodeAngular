@@ -23,9 +23,7 @@ router.put('/user', auth.required, function(req, res, next){
     if(typeof req.body.user.email !== 'undefined'){
       user.email = req.body.user.email;
     }
-    if(typeof req.body.user.bio !== 'undefined'){
-      user.bio = req.body.user.bio;
-    }
+    
     if(typeof req.body.user.image !== 'undefined'){
       user.image = req.body.user.image;
     }
@@ -33,6 +31,19 @@ router.put('/user', auth.required, function(req, res, next){
       user.setPassword(req.body.user.password);
     }
 
+    if(typeof req.body.user.date_birthday !== 'undefined'){
+      user.date_birthday = req.body.user.date_birthday;
+    }
+
+    if(typeof req.body.user.name !== 'undefined'){
+      user.name = req.body.user.name;
+    }
+    if(typeof req.body.user.apellidos !== 'undefined'){
+      user.apellidos = req.body.user.apellidos;
+    }
+    if(typeof req.body.user.dni !== 'undefined'){
+      user.dni = req.body.user.dni;
+    }
     return user.save().then(function(){
       return res.json({user: user.toAuthJSON()});
     });
@@ -71,5 +82,7 @@ router.post('/users', function(req, res, next){
     return res.json({user: user.toAuthJSON()});
   }).catch(next);
 });
+
+
 
 module.exports = router;

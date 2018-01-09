@@ -1,4 +1,4 @@
-<div class="home-page" >
+<div class="details-page" >
     <div ng-repeat="c in scope.computer">
       <div class="contentof">
           <div class="imageof"><img src="{{c.picture}}" alt="" height="150px" width="150px"></div>
@@ -7,6 +7,23 @@
           <div class="nombre">{{c.marca}}</div>
           <div class="nombre">{{c.status}}</div>
           <div class="nombre">{{c.type}}</div>
+            <div style="max-width:50%; max-height:50%;" map-lazy-load="https://maps.google.com/maps/api/js">
+              <ng-map default-style="true"  zoom="7" center="[38.3821778, -0.577064]"> 
+                    <marker ng-repeat="a in c.shop"
+                    position="[{{a.latitude}}, {{a.longitude}}]"
+                    data="{{data[$index]}}"
+                    on-click="map.showInfoWindow(event, 'infow{{a.name}}{{$index}}')";
+                    title="pos: {{a.latitude}}, {{a.longitude}}"></marker>
+                    <info-window id="infow{{a.name}}{{$index}}" ng-repeat="a in c.shop">
+                      <div style="color:black" >
+                        Name: {{a.name}}<br/>
+                        <!-- latitude; {{a.latitude}}<br>
+                        longitude: {{a.longitude}}<br> -->
+                        Stock: {{a.stock}} Unidades
+                      </div>
+                    </info-window>
+              </ng-map>
+            </div>
+     </div>
   </div>
-    
-    </div>
+</div>

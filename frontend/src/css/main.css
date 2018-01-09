@@ -3852,9 +3852,8 @@
 		margin-left: 10px;
 		background-color: #3a3c6a;
 		float: left;
+		display: inline-block;
 	}
-
-	
 
 	#pager{
 		padding-right: 80%;
@@ -3864,8 +3863,7 @@
 		border: 6px solid #3a3c6a;
 		border-radius: 25px;
 		width: 70%;
-		height: 600px;
-		margin-left: 20%;
+		margin-left: 20px;
 		padding: 10px;
 		background-color: #505393;
 	}
@@ -3877,10 +3875,3 @@
 	width: 300px;
 	float: left;
 }
-
-.ofertas{
-	background-color: gray;
-	width: 100%;
-	height: 400px !important;
-}
-

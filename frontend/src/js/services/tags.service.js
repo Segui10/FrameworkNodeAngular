@@ -12,4 +12,5 @@ export default class Tags {
       method: 'GET',
     }).then((res) => res.data.tags);
   }
+  
 }

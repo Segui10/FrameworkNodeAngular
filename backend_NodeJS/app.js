@@ -8,6 +8,7 @@ var http = require('http'),
     passport = require('passport'),
     errorhandler = require('errorhandler'),
     mongoose = require('mongoose');
+    dotenv= require('dotenv').config();
 
 var isProduction = process.env.NODE_ENV === 'production';
 
@@ -33,16 +34,21 @@ if (!isProduction) {
 if(isProduction){
   mongoose.connect(process.env.MONGODB_URI);
 } else {
-  mongoose.connect('mongodb://localhost/computer');
+  mongoose.connect('mongodb://localhost/computers');
   mongoose.set('debug', true);
 }
 
 require('./models/User');
-require('./models/Article');
+// require('./models/Article');
 require('./models/Computer');
-require('./models/Comment');
+// require('./models/Comment');
 require('./config/passport');
-// app.use(require('./utils'));
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+require('./config/routes.js').init(app, passport);
+
 app.use(require('./routes'));
 
 /// catch 404 and forward to error handler

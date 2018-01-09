@@ -1,4 +1,519 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+(function() {
+  'use strict';
+
+  angular.module('toastr', [])
+    .factory('toastr', toastr);
+
+  toastr.$inject = ['$animate', '$injector', '$document', '$rootScope', '$sce', 'toastrConfig', '$q'];
+
+  function toastr($animate, $injector, $document, $rootScope, $sce, toastrConfig, $q) {
+    var container;
+    var index = 0;
+    var toasts = [];
+
+    var previousToastMessage = '';
+    var openToasts = {};
+
+    var containerDefer = $q.defer();
+
+    var toast = {
+      active: active,
+      clear: clear,
+      error: error,
+      info: info,
+      remove: remove,
+      success: success,
+      warning: warning,
+      refreshTimer: refreshTimer
+    };
+
+    return toast;
+
+    /* Public API */
+    function active() {
+      return toasts.length;
+    }
+
+    function clear(toast) {
+      // Bit of a hack, I will remove this soon with a BC
+      if (arguments.length === 1 && !toast) { return; }
+
+      if (toast) {
+        remove(toast.toastId);
+      } else {
+        for (var i = 0; i < toasts.length; i++) {
+          remove(toasts[i].toastId);
+        }
+      }
+    }
+
+    function error(message, title, optionsOverride) {
+      var type = _getOptions().iconClasses.error;
+      return _buildNotification(type, message, title, optionsOverride);
+    }
+
+    function info(message, title, optionsOverride) {
+      var type = _getOptions().iconClasses.info;
+      return _buildNotification(type, message, title, optionsOverride);
+    }
+
+    function success(message, title, optionsOverride) {
+      var type = _getOptions().iconClasses.success;
+      return _buildNotification(type, message, title, optionsOverride);
+    }
+
+    function warning(message, title, optionsOverride) {
+      var type = _getOptions().iconClasses.warning;
+      return _buildNotification(type, message, title, optionsOverride);
+    }
+
+    function refreshTimer(toast, newTime) {
+      if (toast && toast.isOpened && toasts.indexOf(toast) >= 0) {
+          toast.scope.refreshTimer(newTime);
+      }
+    }
+
+    function remove(toastId, wasClicked) {
+      var toast = findToast(toastId);
+
+      if (toast && ! toast.deleting) { // Avoid clicking when fading out
+        toast.deleting = true;
+        toast.isOpened = false;
+        $animate.leave(toast.el).then(function() {
+          if (toast.scope.options.onHidden) {
+            toast.scope.options.onHidden(!!wasClicked, toast);
+          }
+          toast.scope.$destroy();
+          var index = toasts.indexOf(toast);
+          delete openToasts[toast.scope.message];
+          toasts.splice(index, 1);
+          var maxOpened = toastrConfig.maxOpened;
+          if (maxOpened && toasts.length >= maxOpened) {
+            toasts[maxOpened - 1].open.resolve();
+          }
+          if (lastToast()) {
+            container.remove();
+            container = null;
+            containerDefer = $q.defer();
+          }
+        });
+      }
+
+      function findToast(toastId) {
+        for (var i = 0; i < toasts.length; i++) {
+          if (toasts[i].toastId === toastId) {
+            return toasts[i];
+          }
+        }
+      }
+
+      function lastToast() {
+        return !toasts.length;
+      }
+    }
+
+    /* Internal functions */
+    function _buildNotification(type, message, title, optionsOverride) {
+      if (angular.isObject(title)) {
+        optionsOverride = title;
+        title = null;
+      }
+
+      return _notify({
+        iconClass: type,
+        message: message,
+        optionsOverride: optionsOverride,
+        title: title
+      });
+    }
+
+    function _getOptions() {
+      return angular.extend({}, toastrConfig);
+    }
+
+    function _createOrGetContainer(options) {
+      if(container) { return containerDefer.promise; }
+
+      container = angular.element('<div></div>');
+      container.attr('id', options.containerId);
+      container.addClass(options.positionClass);
+      container.css({'pointer-events': 'auto'});
+
+      var target = angular.element(document.querySelector(options.target));
+
+      if ( ! target || ! target.length) {
+        throw 'Target for toasts doesn\'t exist';
+      }
+
+      $animate.enter(container, target).then(function() {
+        containerDefer.resolve();
+      });
+
+      return containerDefer.promise;
+    }
+
+    function _notify(map) {
+      var options = _getOptions();
+
+      if (shouldExit()) { return; }
+
+      var newToast = createToast();
+
+      toasts.push(newToast);
+
+      if (ifMaxOpenedAndAutoDismiss()) {
+        var oldToasts = toasts.slice(0, (toasts.length - options.maxOpened));
+        for (var i = 0, len = oldToasts.length; i < len; i++) {
+          remove(oldToasts[i].toastId);
+        }
+      }
+
+      if (maxOpenedNotReached()) {
+        newToast.open.resolve();
+      }
+
+      newToast.open.promise.then(function() {
+        _createOrGetContainer(options).then(function() {
+          newToast.isOpened = true;
+          if (options.newestOnTop) {
+            $animate.enter(newToast.el, container).then(function() {
+              newToast.scope.init();
+            });
+          } else {
+            var sibling = container[0].lastChild ? angular.element(container[0].lastChild) : null;
+            $animate.enter(newToast.el, container, sibling).then(function() {
+              newToast.scope.init();
+            });
+          }
+        });
+      });
+
+      return newToast;
+
+      function ifMaxOpenedAndAutoDismiss() {
+        return options.autoDismiss && options.maxOpened && toasts.length > options.maxOpened;
+      }
+
+      function createScope(toast, map, options) {
+        if (options.allowHtml) {
+          toast.scope.allowHtml = true;
+          toast.scope.title = $sce.trustAsHtml(map.title);
+          toast.scope.message = $sce.trustAsHtml(map.message);
+        } else {
+          toast.scope.title = map.title;
+          toast.scope.message = map.message;
+        }
+
+        toast.scope.toastType = toast.iconClass;
+        toast.scope.toastId = toast.toastId;
+        toast.scope.extraData = options.extraData;
+
+        toast.scope.options = {
+          extendedTimeOut: options.extendedTimeOut,
+          messageClass: options.messageClass,
+          onHidden: options.onHidden,
+          onShown: generateEvent('onShown'),
+          onTap: generateEvent('onTap'),
+          progressBar: options.progressBar,
+          tapToDismiss: options.tapToDismiss,
+          timeOut: options.timeOut,
+          titleClass: options.titleClass,
+          toastClass: options.toastClass
+        };
+
+        if (options.closeButton) {
+          toast.scope.options.closeHtml = options.closeHtml;
+        }
+
+        function generateEvent(event) {
+          if (options[event]) {
+            return function() {
+              options[event](toast);
+            };
+          }
+        }
+      }
+
+      function createToast() {
+        var newToast = {
+          toastId: index++,
+          isOpened: false,
+          scope: $rootScope.$new(),
+          open: $q.defer()
+        };
+        newToast.iconClass = map.iconClass;
+        if (map.optionsOverride) {
+          angular.extend(options, cleanOptionsOverride(map.optionsOverride));
+          newToast.iconClass = map.optionsOverride.iconClass || newToast.iconClass;
+        }
+
+        createScope(newToast, map, options);
+
+        newToast.el = createToastEl(newToast.scope);
+
+        return newToast;
+
+        function cleanOptionsOverride(options) {
+          var badOptions = ['containerId', 'iconClasses', 'maxOpened', 'newestOnTop',
+                            'positionClass', 'preventDuplicates', 'preventOpenDuplicates', 'templates'];
+          for (var i = 0, l = badOptions.length; i < l; i++) {
+            delete options[badOptions[i]];
+          }
+
+          return options;
+        }
+      }
+
+      function createToastEl(scope) {
+        var angularDomEl = angular.element('<div toast></div>'),
+          $compile = $injector.get('$compile');
+        return $compile(angularDomEl)(scope);
+      }
+
+      function maxOpenedNotReached() {
+        return options.maxOpened && toasts.length <= options.maxOpened || !options.maxOpened;
+      }
+
+      function shouldExit() {
+        var isDuplicateOfLast = options.preventDuplicates && map.message === previousToastMessage;
+        var isDuplicateOpen = options.preventOpenDuplicates && openToasts[map.message];
+
+        if (isDuplicateOfLast || isDuplicateOpen) {
+          return true;
+        }
+
+        previousToastMessage = map.message;
+        openToasts[map.message] = true;
+
+        return false;
+      }
+    }
+  }
+}());
+
+(function() {
+  'use strict';
+
+  angular.module('toastr')
+    .constant('toastrConfig', {
+      allowHtml: false,
+      autoDismiss: false,
+      closeButton: false,
+      closeHtml: '<button>&times;</button>',
+      containerId: 'toast-container',
+      extendedTimeOut: 1000,
+      iconClasses: {
+        error: 'toast-error',
+        info: 'toast-info',
+        success: 'toast-success',
+        warning: 'toast-warning'
+      },
+      maxOpened: 0,
+      messageClass: 'toast-message',
+      newestOnTop: true,
+      onHidden: null,
+      onShown: null,
+      onTap: null,
+      positionClass: 'toast-top-right',
+      preventDuplicates: false,
+      preventOpenDuplicates: false,
+      progressBar: false,
+      tapToDismiss: true,
+      target: 'body',
+      templates: {
+        toast: 'directives/toast/toast.html',
+        progressbar: 'directives/progressbar/progressbar.html'
+      },
+      timeOut: 5000,
+      titleClass: 'toast-title',
+      toastClass: 'toast'
+    });
+}());
+
+(function() {
+  'use strict';
+
+  angular.module('toastr')
+    .directive('progressBar', progressBar);
+
+  progressBar.$inject = ['toastrConfig'];
+
+  function progressBar(toastrConfig) {
+    return {
+      require: '^toast',
+      templateUrl: function() {
+        return toastrConfig.templates.progressbar;
+      },
+      link: linkFunction
+    };
+
+    function linkFunction(scope, element, attrs, toastCtrl) {
+      var intervalId, currentTimeOut, hideTime;
+
+      toastCtrl.progressBar = scope;
+
+      scope.start = function(duration) {
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+
+        currentTimeOut = parseFloat(duration);
+        hideTime = new Date().getTime() + currentTimeOut;
+        intervalId = setInterval(updateProgress, 10);
+      };
+
+      scope.stop = function() {
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+      };
+
+      function updateProgress() {
+        var percentage = ((hideTime - (new Date().getTime())) / currentTimeOut) * 100;
+        element.css('width', percentage + '%');
+      }
+
+      scope.$on('$destroy', function() {
+        // Failsafe stop
+        clearInterval(intervalId);
+      });
+    }
+  }
+}());
+
+(function() {
+  'use strict';
+
+  angular.module('toastr')
+    .controller('ToastController', ToastController);
+
+  function ToastController() {
+    this.progressBar = null;
+
+    this.startProgressBar = function(duration) {
+      if (this.progressBar) {
+        this.progressBar.start(duration);
+      }
+    };
+
+    this.stopProgressBar = function() {
+      if (this.progressBar) {
+        this.progressBar.stop();
+      }
+    };
+  }
+}());
+
+(function() {
+  'use strict';
+
+  angular.module('toastr')
+    .directive('toast', toast);
+
+  toast.$inject = ['$injector', '$interval', 'toastrConfig', 'toastr'];
+
+  function toast($injector, $interval, toastrConfig, toastr) {
+    return {
+      templateUrl: function() {
+        return toastrConfig.templates.toast;
+      },
+      controller: 'ToastController',
+      link: toastLinkFunction
+    };
+
+    function toastLinkFunction(scope, element, attrs, toastCtrl) {
+      var timeout;
+
+      scope.toastClass = scope.options.toastClass;
+      scope.titleClass = scope.options.titleClass;
+      scope.messageClass = scope.options.messageClass;
+      scope.progressBar = scope.options.progressBar;
+
+      if (wantsCloseButton()) {
+        var button = angular.element(scope.options.closeHtml),
+          $compile = $injector.get('$compile');
+        button.addClass('toast-close-button');
+        button.attr('ng-click', 'close(true, $event)');
+        $compile(button)(scope);
+        element.children().prepend(button);
+      }
+
+      scope.init = function() {
+        if (scope.options.timeOut) {
+          timeout = createTimeout(scope.options.timeOut);
+        }
+        if (scope.options.onShown) {
+          scope.options.onShown();
+        }
+      };
+
+      element.on('mouseenter', function() {
+        hideAndStopProgressBar();
+        if (timeout) {
+          $interval.cancel(timeout);
+        }
+      });
+
+      scope.tapToast = function () {
+        if (angular.isFunction(scope.options.onTap)) {
+          scope.options.onTap();
+        }
+        if (scope.options.tapToDismiss) {
+          scope.close(true);
+        }
+      };
+
+      scope.close = function (wasClicked, $event) {
+        if ($event && angular.isFunction($event.stopPropagation)) {
+          $event.stopPropagation();
+        }
+        toastr.remove(scope.toastId, wasClicked);
+      };
+      
+      scope.refreshTimer = function(newTime) {
+        if (timeout) {
+          $interval.cancel(timeout);
+          timeout = createTimeout(newTime || scope.options.timeOut);
+        }
+      };
+
+      element.on('mouseleave', function() {
+        if (scope.options.timeOut === 0 && scope.options.extendedTimeOut === 0) { return; }
+        scope.$apply(function() {
+          scope.progressBar = scope.options.progressBar;
+        });
+        timeout = createTimeout(scope.options.extendedTimeOut);
+      });
+
+      function createTimeout(time) {
+        toastCtrl.startProgressBar(time);
+        return $interval(function() {
+          toastCtrl.stopProgressBar();
+          toastr.remove(scope.toastId);
+        }, time, 1);
+      }
+
+      function hideAndStopProgressBar() {
+        scope.progressBar = false;
+        toastCtrl.stopProgressBar();
+      }
+
+      function wantsCloseButton() {
+        return scope.options.closeHtml;
+      }
+    }
+  }
+}());
+
+angular.module("toastr").run(["$templateCache", function($templateCache) {$templateCache.put("directives/progressbar/progressbar.html","<div class=\"toast-progress\"></div>\n");
+$templateCache.put("directives/toast/toast.html","<div class=\"{{toastClass}} {{toastType}}\" ng-click=\"tapToast()\">\n  <div ng-switch on=\"allowHtml\">\n    <div ng-switch-default ng-if=\"title\" class=\"{{titleClass}}\" aria-label=\"{{title}}\">{{title}}</div>\n    <div ng-switch-default class=\"{{messageClass}}\" aria-label=\"{{message}}\">{{message}}</div>\n    <div ng-switch-when=\"true\" ng-if=\"title\" class=\"{{titleClass}}\" ng-bind-html=\"title\"></div>\n    <div ng-switch-when=\"true\" class=\"{{messageClass}}\" ng-bind-html=\"message\"></div>\n  </div>\n  <progress-bar ng-if=\"progressBar\"></progress-bar>\n</div>\n");}]);
+},{}],2:[function(require,module,exports){
+require('./dist/angular-toastr.tpls.js');
+module.exports = 'toastr';
+
+
+},{"./dist/angular-toastr.tpls.js":1}],3:[function(require,module,exports){
 /**
  * State-based routing for AngularJS
  * @version v0.4.3
@@ -4683,7 +5198,7 @@ angular.module('ui.router.state')
   .filter('isState', $IsStateFilter)
   .filter('includedByState', $IncludedByStateFilter);
 })(window, window.angular);
-},{}],2:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 /**
  * @license AngularJS v1.6.7
  * (c) 2010-2017 Google, Inc. http://angularjs.org
@@ -38875,1301 +39390,3461 @@ $provide.value("$locale", {
 })(window);
 
 !window.angular.$$csp().noInlineStyle && window.angular.element(document.head).prepend('<style type="text/css">@charset "UTF-8";[ng\\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide:not(.ng-hide-animate){display:none !important;}ng\\:form{display:block;}.ng-animate-shim{visibility:hidden;}.ng-anchor{position:absolute;}</style>');
-},{}],3:[function(require,module,exports){
+},{}],5:[function(require,module,exports){
 require('./angular');
 module.exports = angular;
 
-},{"./angular":2}],4:[function(require,module,exports){
-(function (global){
-/**
- * marked - a markdown parser
- * Copyright (c) 2011-2014, Christopher Jeffrey. (MIT Licensed)
- * https://github.com/chjj/marked
- */
-
-;(function() {
-
-/**
- * Block-Level Grammar
- */
-
-var block = {
-  newline: /^\n+/,
-  code: /^( {4}[^\n]+\n*)+/,
-  fences: noop,
-  hr: /^( *[-*_]){3,} *(?:\n+|$)/,
-  heading: /^ *(#{1,6}) *([^\n]+?) *#* *(?:\n+|$)/,
-  nptable: noop,
-  lheading: /^([^\n]+)\n *(=|-){2,} *(?:\n+|$)/,
-  blockquote: /^( *>[^\n]+(\n(?!def)[^\n]+)*\n*)+/,
-  list: /^( *)(bull) [\s\S]+?(?:hr|def|\n{2,}(?! )(?!\1bull )\n*|\s*$)/,
-  html: /^ *(?:comment *(?:\n|\s*$)|closed *(?:\n{2,}|\s*$)|closing *(?:\n{2,}|\s*$))/,
-  def: /^ *\[([^\]]+)\]: *<?([^\s>]+)>?(?: +["(]([^\n]+)[")])? *(?:\n+|$)/,
-  table: noop,
-  paragraph: /^((?:[^\n]+\n?(?!hr|heading|lheading|blockquote|tag|def))+)\n*/,
-  text: /^[^\n]+/
-};
-
-block.bullet = /(?:[*+-]|\d+\.)/;
-block.item = /^( *)(bull) [^\n]*(?:\n(?!\1bull )[^\n]*)*/;
-block.item = replace(block.item, 'gm')
-  (/bull/g, block.bullet)
-  ();
-
-block.list = replace(block.list)
-  (/bull/g, block.bullet)
-  ('hr', '\\n+(?=\\1?(?:[-*_] *){3,}(?:\\n+|$))')
-  ('def', '\\n+(?=' + block.def.source + ')')
-  ();
-
-block.blockquote = replace(block.blockquote)
-  ('def', block.def)
-  ();
-
-block._tag = '(?!(?:'
-  + 'a|em|strong|small|s|cite|q|dfn|abbr|data|time|code'
-  + '|var|samp|kbd|sub|sup|i|b|u|mark|ruby|rt|rp|bdi|bdo'
-  + '|span|br|wbr|ins|del|img)\\b)\\w+(?!:/|[^\\w\\s@]*@)\\b';
-
-block.html = replace(block.html)
-  ('comment', /<!--[\s\S]*?-->/)
-  ('closed', /<(tag)[\s\S]+?<\/\1>/)
-  ('closing', /<tag(?:"[^"]*"|'[^']*'|[^'">])*?>/)
-  (/tag/g, block._tag)
-  ();
-
-block.paragraph = replace(block.paragraph)
-  ('hr', block.hr)
-  ('heading', block.heading)
-  ('lheading', block.lheading)
-  ('blockquote', block.blockquote)
-  ('tag', '<' + block._tag)
-  ('def', block.def)
-  ();
-
-/**
- * Normal Block Grammar
- */
-
-block.normal = merge({}, block);
-
-/**
- * GFM Block Grammar
- */
-
-block.gfm = merge({}, block.normal, {
-  fences: /^ *(`{3,}|~{3,})[ \.]*(\S+)? *\n([\s\S]*?)\s*\1 *(?:\n+|$)/,
-  paragraph: /^/,
-  heading: /^ *(#{1,6}) +([^\n]+?) *#* *(?:\n+|$)/
-});
-
-block.gfm.paragraph = replace(block.paragraph)
-  ('(?!', '(?!'
-    + block.gfm.fences.source.replace('\\1', '\\2') + '|'
-    + block.list.source.replace('\\1', '\\3') + '|')
-  ();
-
-/**
- * GFM + Tables Block Grammar
- */
-
-block.tables = merge({}, block.gfm, {
-  nptable: /^ *(\S.*\|.*)\n *([-:]+ *\|[-| :]*)\n((?:.*\|.*(?:\n|$))*)\n*/,
-  table: /^ *\|(.+)\n *\|( *[-:]+[-| :]*)\n((?: *\|.*(?:\n|$))*)\n*/
-});
-
-/**
- * Block Lexer
- */
-
-function Lexer(options) {
-  this.tokens = [];
-  this.tokens.links = {};
-  this.options = options || marked.defaults;
-  this.rules = block.normal;
-
-  if (this.options.gfm) {
-    if (this.options.tables) {
-      this.rules = block.tables;
-    } else {
-      this.rules = block.gfm;
-    }
-  }
+},{"./angular":4}],6:[function(require,module,exports){
+(function(root, factory) {
+if (typeof exports === "object") {
+module.exports = factory(require('angular'));
+} else if (typeof define === "function" && define.amd) {
+define(['angular'], factory);
+} else{
+factory(root.angular);
 }
+}(this, function(angular) {
+/**
+ * AngularJS Google Maps Ver. 1.18.3
+ *
+ * The MIT License (MIT)
+ * 
+ * Copyright (c) 2014, 2015, 1016 Allen Kim
+ * 
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+ * the Software, and to permit persons to whom the Software is furnished to do so,
+ * subject to the following conditions:
+ * 
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ * 
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ * FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ * COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+ * IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+ * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+angular.module('ngMap', []);
 
 /**
- * Expose Block Rules
+ * @ngdoc controller
+ * @name MapController
  */
+(function() {
+  'use strict';
+  var Attr2MapOptions;
 
-Lexer.rules = block;
+  var __MapController = function(
+      $scope, $element, $attrs, $parse, $interpolate, _Attr2MapOptions_, NgMap, NgMapPool, escapeRegExp
+    ) {
+    Attr2MapOptions = _Attr2MapOptions_;
+    var vm = this;
+    var exprStartSymbol = $interpolate.startSymbol();
+    var exprEndSymbol = $interpolate.endSymbol();
 
-/**
- * Static Lex Method
- */
+    vm.mapOptions; /** @memberof __MapController */
+    vm.mapEvents;  /** @memberof __MapController */
+    vm.eventListeners;  /** @memberof __MapController */
 
-Lexer.lex = function(src, options) {
-  var lexer = new Lexer(options);
-  return lexer.lex(src);
-};
+    /**
+     * Add an object to the collection of group
+     * @memberof __MapController
+     * @function addObject
+     * @param groupName the name of collection that object belongs to
+     * @param obj  an object to add into a collection, i.e. marker, shape
+     */
+    vm.addObject = function(groupName, obj) {
+      if (vm.map) {
+        vm.map[groupName] = vm.map[groupName] || {};
+        var len = Object.keys(vm.map[groupName]).length;
+        vm.map[groupName][obj.id || len] = obj;
 
-/**
- * Preprocessing
- */
-
-Lexer.prototype.lex = function(src) {
-  src = src
-    .replace(/\r\n|\r/g, '\n')
-    .replace(/\t/g, '    ')
-    .replace(/\u00a0/g, ' ')
-    .replace(/\u2424/g, '\n');
-
-  return this.token(src, true);
-};
-
-/**
- * Lexing
- */
-
-Lexer.prototype.token = function(src, top, bq) {
-  var src = src.replace(/^ +$/gm, '')
-    , next
-    , loose
-    , cap
-    , bull
-    , b
-    , item
-    , space
-    , i
-    , l;
-
-  while (src) {
-    // newline
-    if (cap = this.rules.newline.exec(src)) {
-      src = src.substring(cap[0].length);
-      if (cap[0].length > 1) {
-        this.tokens.push({
-          type: 'space'
-        });
-      }
-    }
-
-    // code
-    if (cap = this.rules.code.exec(src)) {
-      src = src.substring(cap[0].length);
-      cap = cap[0].replace(/^ {4}/gm, '');
-      this.tokens.push({
-        type: 'code',
-        text: !this.options.pedantic
-          ? cap.replace(/\n+$/, '')
-          : cap
-      });
-      continue;
-    }
-
-    // fences (gfm)
-    if (cap = this.rules.fences.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'code',
-        lang: cap[2],
-        text: cap[3] || ''
-      });
-      continue;
-    }
-
-    // heading
-    if (cap = this.rules.heading.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'heading',
-        depth: cap[1].length,
-        text: cap[2]
-      });
-      continue;
-    }
-
-    // table no leading pipe (gfm)
-    if (top && (cap = this.rules.nptable.exec(src))) {
-      src = src.substring(cap[0].length);
-
-      item = {
-        type: 'table',
-        header: cap[1].replace(/^ *| *\| *$/g, '').split(/ *\| */),
-        align: cap[2].replace(/^ *|\| *$/g, '').split(/ *\| */),
-        cells: cap[3].replace(/\n$/, '').split('\n')
-      };
-
-      for (i = 0; i < item.align.length; i++) {
-        if (/^ *-+: *$/.test(item.align[i])) {
-          item.align[i] = 'right';
-        } else if (/^ *:-+: *$/.test(item.align[i])) {
-          item.align[i] = 'center';
-        } else if (/^ *:-+ *$/.test(item.align[i])) {
-          item.align[i] = 'left';
-        } else {
-          item.align[i] = null;
+        if (vm.map instanceof google.maps.Map) {
+          //infoWindow.setMap works like infoWindow.open
+          if (groupName != "infoWindows" && obj.setMap) {
+            obj.setMap && obj.setMap(vm.map);
+          }
+          if (obj.centered && obj.position) {
+            vm.map.setCenter(obj.position);
+          }
+          (groupName == 'markers') && vm.objectChanged('markers');
+          (groupName == 'customMarkers') && vm.objectChanged('customMarkers');
         }
       }
+    };
 
-      for (i = 0; i < item.cells.length; i++) {
-        item.cells[i] = item.cells[i].split(/ *\| */);
-      }
-
-      this.tokens.push(item);
-
-      continue;
-    }
-
-    // lheading
-    if (cap = this.rules.lheading.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'heading',
-        depth: cap[2] === '=' ? 1 : 2,
-        text: cap[1]
-      });
-      continue;
-    }
-
-    // hr
-    if (cap = this.rules.hr.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'hr'
-      });
-      continue;
-    }
-
-    // blockquote
-    if (cap = this.rules.blockquote.exec(src)) {
-      src = src.substring(cap[0].length);
-
-      this.tokens.push({
-        type: 'blockquote_start'
-      });
-
-      cap = cap[0].replace(/^ *> ?/gm, '');
-
-      // Pass `top` to keep the current
-      // "toplevel" state. This is exactly
-      // how markdown.pl works.
-      this.token(cap, top, true);
-
-      this.tokens.push({
-        type: 'blockquote_end'
-      });
-
-      continue;
-    }
-
-    // list
-    if (cap = this.rules.list.exec(src)) {
-      src = src.substring(cap[0].length);
-      bull = cap[2];
-
-      this.tokens.push({
-        type: 'list_start',
-        ordered: bull.length > 1
-      });
-
-      // Get each top-level item.
-      cap = cap[0].match(this.rules.item);
-
-      next = false;
-      l = cap.length;
-      i = 0;
-
-      for (; i < l; i++) {
-        item = cap[i];
-
-        // Remove the list item's bullet
-        // so it is seen as the next token.
-        space = item.length;
-        item = item.replace(/^ *([*+-]|\d+\.) +/, '');
-
-        // Outdent whatever the
-        // list item contains. Hacky.
-        if (~item.indexOf('\n ')) {
-          space -= item.length;
-          item = !this.options.pedantic
-            ? item.replace(new RegExp('^ {1,' + space + '}', 'gm'), '')
-            : item.replace(/^ {1,4}/gm, '');
-        }
-
-        // Determine whether the next list item belongs here.
-        // Backpedal if it does not belong in this list.
-        if (this.options.smartLists && i !== l - 1) {
-          b = block.bullet.exec(cap[i + 1])[0];
-          if (bull !== b && !(bull.length > 1 && b.length > 1)) {
-            src = cap.slice(i + 1).join('\n') + src;
-            i = l - 1;
+    /**
+     * Delete an object from the collection and remove from map
+     * @memberof __MapController
+     * @function deleteObject
+     * @param {Array} objs the collection of objects. i.e., map.markers
+     * @param {Object} obj the object to be removed. i.e., marker
+     */
+    vm.deleteObject = function(groupName, obj) {
+      /* delete from group */
+      if (obj.map) {
+        var objs = obj.map[groupName];
+        for (var name in objs) {
+          if (objs[name] === obj) {
+            void 0;
+            google.maps.event.clearInstanceListeners(obj);
+            delete objs[name];
           }
         }
 
-        // Determine whether item is loose or not.
-        // Use: /(^|\n)(?! )[^\n]+\n\n(?!\s*$)/
-        // for discount behavior.
-        loose = next || /\n\n(?!\s*$)/.test(item);
-        if (i !== l - 1) {
-          next = item.charAt(item.length - 1) === '\n';
-          if (!loose) loose = next;
+        /* delete from map */
+        obj.map && obj.setMap && obj.setMap(null);
+
+        (groupName == 'markers') && vm.objectChanged('markers');
+        (groupName == 'customMarkers') && vm.objectChanged('customMarkers');
+      }
+    };
+
+    /**
+     * @memberof __MapController
+     * @function observeAttrSetObj
+     * @param {Hash} orgAttrs attributes before its initialization
+     * @param {Hash} attrs    attributes after its initialization
+     * @param {Object} obj    map object that an action is to be done
+     * @description watch changes of attribute values and
+     * do appropriate action based on attribute name
+     */
+    vm.observeAttrSetObj = function(orgAttrs, attrs, obj) {
+      if (attrs.noWatcher) {
+        return false;
+      }
+      var attrsToObserve = Attr2MapOptions.getAttrsToObserve(orgAttrs);
+      for (var i=0; i<attrsToObserve.length; i++) {
+        var attrName = attrsToObserve[i];
+        attrs.$observe(attrName, NgMap.observeAndSet(attrName, obj));
+      }
+    };
+
+    /**
+     * @memberof __MapController
+     * @function zoomToIncludeMarkers
+     */
+    vm.zoomToIncludeMarkers = function() {
+      // Only fit to bounds if we have any markers
+      // object.keys is supported in all major browsers (IE9+)
+      if ((vm.map.markers != null && Object.keys(vm.map.markers).length > 0) || (vm.map.customMarkers != null && Object.keys(vm.map.customMarkers).length > 0)) {
+        var bounds = new google.maps.LatLngBounds();
+        for (var k1 in vm.map.markers) {
+          bounds.extend(vm.map.markers[k1].getPosition());
         }
-
-        this.tokens.push({
-          type: loose
-            ? 'loose_item_start'
-            : 'list_item_start'
-        });
-
-        // Recurse.
-        this.token(item, false, bq);
-
-        this.tokens.push({
-          type: 'list_item_end'
-        });
-      }
-
-      this.tokens.push({
-        type: 'list_end'
-      });
-
-      continue;
-    }
-
-    // html
-    if (cap = this.rules.html.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: this.options.sanitize
-          ? 'paragraph'
-          : 'html',
-        pre: !this.options.sanitizer
-          && (cap[1] === 'pre' || cap[1] === 'script' || cap[1] === 'style'),
-        text: cap[0]
-      });
-      continue;
-    }
-
-    // def
-    if ((!bq && top) && (cap = this.rules.def.exec(src))) {
-      src = src.substring(cap[0].length);
-      this.tokens.links[cap[1].toLowerCase()] = {
-        href: cap[2],
-        title: cap[3]
-      };
-      continue;
-    }
-
-    // table (gfm)
-    if (top && (cap = this.rules.table.exec(src))) {
-      src = src.substring(cap[0].length);
-
-      item = {
-        type: 'table',
-        header: cap[1].replace(/^ *| *\| *$/g, '').split(/ *\| */),
-        align: cap[2].replace(/^ *|\| *$/g, '').split(/ *\| */),
-        cells: cap[3].replace(/(?: *\| *)?\n$/, '').split('\n')
-      };
-
-      for (i = 0; i < item.align.length; i++) {
-        if (/^ *-+: *$/.test(item.align[i])) {
-          item.align[i] = 'right';
-        } else if (/^ *:-+: *$/.test(item.align[i])) {
-          item.align[i] = 'center';
-        } else if (/^ *:-+ *$/.test(item.align[i])) {
-          item.align[i] = 'left';
-        } else {
-          item.align[i] = null;
+        for (var k2 in vm.map.customMarkers) {
+          bounds.extend(vm.map.customMarkers[k2].getPosition());
         }
+    	  if (vm.mapOptions.maximumZoom) {
+    		  vm.enableMaximumZoomCheck = true; //enable zoom check after resizing for markers
+    	  }
+        vm.map.fitBounds(bounds);
+      }
+    };
+
+    /**
+     * @memberof __MapController
+     * @function objectChanged
+     * @param {String} group name of group e.g., markers
+     */
+    vm.objectChanged = function(group) {
+      if ( vm.map &&
+        (group == 'markers' || group == 'customMarkers') &&
+        vm.map.zoomToIncludeMarkers == 'auto'
+      ) {
+        vm.zoomToIncludeMarkers();
+      }
+    };
+
+    /**
+     * @memberof __MapController
+     * @function initializeMap
+     * @description
+     *  . initialize Google map on <div> tag
+     *  . set map options, events, and observers
+     *  . reset zoom to include all (custom)markers
+     */
+    vm.initializeMap = function() {
+      var mapOptions = vm.mapOptions,
+          mapEvents = vm.mapEvents;
+
+      var lazyInitMap = vm.map; //prepared for lazy init
+      vm.map = NgMapPool.getMapInstance($element[0]);
+      NgMap.setStyle($element[0]);
+
+      // set objects for lazyInit
+      if (lazyInitMap) {
+
+        /**
+         * rebuild mapOptions for lazyInit
+         * because attributes values might have been changed
+         */
+        var filtered = Attr2MapOptions.filter($attrs);
+        var options = Attr2MapOptions.getOptions(filtered);
+        var controlOptions = Attr2MapOptions.getControlOptions(filtered);
+        mapOptions = angular.extend(options, controlOptions);
+        void 0;
+
+        for (var group in lazyInitMap) {
+          var groupMembers = lazyInitMap[group]; //e.g. markers
+          if (typeof groupMembers == 'object') {
+            for (var id in groupMembers) {
+              vm.addObject(group, groupMembers[id]);
+            }
+          }
+        }
+        vm.map.showInfoWindow = vm.showInfoWindow;
+        vm.map.hideInfoWindow = vm.hideInfoWindow;
       }
 
-      for (i = 0; i < item.cells.length; i++) {
-        item.cells[i] = item.cells[i]
-          .replace(/^ *\| *| *\| *$/g, '')
-          .split(/ *\| */);
+      // set options
+      mapOptions.zoom = mapOptions.zoom || 15;
+      var center = mapOptions.center;
+      var exprRegExp = new RegExp(escapeRegExp(exprStartSymbol) + '.*' + escapeRegExp(exprEndSymbol));
+
+      if (!mapOptions.center ||
+        ((typeof center === 'string') && center.match(exprRegExp))
+      ) {
+        mapOptions.center = new google.maps.LatLng(0, 0);
+      } else if( (typeof center === 'string') && center.match(/^[0-9.-]*,[0-9.-]*$/) ){
+        var lat = parseFloat(center.split(',')[0]);
+        var lng = parseFloat(center.split(',')[1]);
+        mapOptions.center = new google.maps.LatLng(lat, lng);
+      } else if (!(center instanceof google.maps.LatLng)) {
+        var geoCenter = mapOptions.center;
+        delete mapOptions.center;
+        NgMap.getGeoLocation(geoCenter, mapOptions.geoLocationOptions).
+          then(function (latlng) {
+            vm.map.setCenter(latlng);
+            var geoCallback = mapOptions.geoCallback;
+            geoCallback && $parse(geoCallback)($scope);
+          }, function () {
+            if (mapOptions.geoFallbackCenter) {
+              vm.map.setCenter(mapOptions.geoFallbackCenter);
+            }
+          });
+      }
+      vm.map.setOptions(mapOptions);
+
+      // set events
+      for (var eventName in mapEvents) {
+        var event = mapEvents[eventName];
+        var listener = google.maps.event.addListener(vm.map, eventName, event);
+        vm.eventListeners[eventName] = listener;
       }
 
-      this.tokens.push(item);
+      // set observers
+      vm.observeAttrSetObj(orgAttrs, $attrs, vm.map);
+      vm.singleInfoWindow = mapOptions.singleInfoWindow;
 
-      continue;
-    }
+      google.maps.event.trigger(vm.map, 'resize');
 
-    // top-level paragraph
-    if (top && (cap = this.rules.paragraph.exec(src))) {
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'paragraph',
-        text: cap[1].charAt(cap[1].length - 1) === '\n'
-          ? cap[1].slice(0, -1)
-          : cap[1]
+      google.maps.event.addListenerOnce(vm.map, "idle", function () {
+        NgMap.addMap(vm);
+        if (mapOptions.zoomToIncludeMarkers) {
+          vm.zoomToIncludeMarkers();
+        }
+        //TODO: it's for backward compatibiliy. will be removed
+        $scope.map = vm.map;
+        $scope.$emit('mapInitialized', vm.map);
+
+        //callback
+        if ($attrs.mapInitialized) {
+          $parse($attrs.mapInitialized)($scope, {map: vm.map});
+        }
       });
-      continue;
-    }
 
-    // text
-    if (cap = this.rules.text.exec(src)) {
-      // Top-level should never reach here.
-      src = src.substring(cap[0].length);
-      this.tokens.push({
-        type: 'text',
-        text: cap[0]
-      });
-      continue;
-    }
+	  //add maximum zoom listeners if zoom-to-include-markers and and maximum-zoom are valid attributes
+	  if (mapOptions.zoomToIncludeMarkers && mapOptions.maximumZoom) {
+	    google.maps.event.addListener(vm.map, 'zoom_changed', function() {
+          if (vm.enableMaximumZoomCheck == true) {
+			vm.enableMaximumZoomCheck = false;
+	        google.maps.event.addListenerOnce(vm.map, 'bounds_changed', function() {
+		      vm.map.setZoom(Math.min(mapOptions.maximumZoom, vm.map.getZoom()));
+		    });
+	  	  }
+	    });
+	  }
+    };
 
-    if (src) {
-      throw new
-        Error('Infinite loop on byte: ' + src.charCodeAt(0));
-    }
-  }
+    $scope.google = google; //used by $scope.eval to avoid eval()
 
-  return this.tokens;
-};
+    /**
+     * get map options and events
+     */
+    var orgAttrs = Attr2MapOptions.orgAttributes($element);
+    var filtered = Attr2MapOptions.filter($attrs);
+    var options = Attr2MapOptions.getOptions(filtered, {scope: $scope});
+    var controlOptions = Attr2MapOptions.getControlOptions(filtered);
+    var mapOptions = angular.extend(options, controlOptions);
+    var mapEvents = Attr2MapOptions.getEvents($scope, filtered);
+    void 0;
+    Object.keys(mapEvents).length && void 0;
 
-/**
- * Inline-Level Grammar
- */
+    vm.mapOptions = mapOptions;
+    vm.mapEvents = mapEvents;
+    vm.eventListeners = {};
 
-var inline = {
-  escape: /^\\([\\`*{}\[\]()#+\-.!_>])/,
-  autolink: /^<([^ >]+(@|:\/)[^ >]+)>/,
-  url: noop,
-  tag: /^<!--[\s\S]*?-->|^<\/?\w+(?:"[^"]*"|'[^']*'|[^'">])*?>/,
-  link: /^!?\[(inside)\]\(href\)/,
-  reflink: /^!?\[(inside)\]\s*\[([^\]]*)\]/,
-  nolink: /^!?\[((?:\[[^\]]*\]|[^\[\]])*)\]/,
-  strong: /^__([\s\S]+?)__(?!_)|^\*\*([\s\S]+?)\*\*(?!\*)/,
-  em: /^\b_((?:[^_]|__)+?)_\b|^\*((?:\*\*|[\s\S])+?)\*(?!\*)/,
-  code: /^(`+)\s*([\s\S]*?[^`])\s*\1(?!`)/,
-  br: /^ {2,}\n(?!\s*$)/,
-  del: noop,
-  text: /^[\s\S]+?(?=[\\<!\[_*`]| {2,}\n|$)/
-};
-
-inline._inside = /(?:\[[^\]]*\]|[^\[\]]|\](?=[^\[]*\]))*/;
-inline._href = /\s*<?([\s\S]*?)>?(?:\s+['"]([\s\S]*?)['"])?\s*/;
-
-inline.link = replace(inline.link)
-  ('inside', inline._inside)
-  ('href', inline._href)
-  ();
-
-inline.reflink = replace(inline.reflink)
-  ('inside', inline._inside)
-  ();
-
-/**
- * Normal Inline Grammar
- */
-
-inline.normal = merge({}, inline);
-
-/**
- * Pedantic Inline Grammar
- */
-
-inline.pedantic = merge({}, inline.normal, {
-  strong: /^__(?=\S)([\s\S]*?\S)__(?!_)|^\*\*(?=\S)([\s\S]*?\S)\*\*(?!\*)/,
-  em: /^_(?=\S)([\s\S]*?\S)_(?!_)|^\*(?=\S)([\s\S]*?\S)\*(?!\*)/
-});
-
-/**
- * GFM Inline Grammar
- */
-
-inline.gfm = merge({}, inline.normal, {
-  escape: replace(inline.escape)('])', '~|])')(),
-  url: /^(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/,
-  del: /^~~(?=\S)([\s\S]*?\S)~~/,
-  text: replace(inline.text)
-    (']|', '~]|')
-    ('|', '|https?://|')
-    ()
-});
-
-/**
- * GFM + Line Breaks Inline Grammar
- */
-
-inline.breaks = merge({}, inline.gfm, {
-  br: replace(inline.br)('{2,}', '*')(),
-  text: replace(inline.gfm.text)('{2,}', '*')()
-});
-
-/**
- * Inline Lexer & Compiler
- */
-
-function InlineLexer(links, options) {
-  this.options = options || marked.defaults;
-  this.links = links;
-  this.rules = inline.normal;
-  this.renderer = this.options.renderer || new Renderer;
-  this.renderer.options = this.options;
-
-  if (!this.links) {
-    throw new
-      Error('Tokens array requires a `links` property.');
-  }
-
-  if (this.options.gfm) {
-    if (this.options.breaks) {
-      this.rules = inline.breaks;
-    } else {
-      this.rules = inline.gfm;
-    }
-  } else if (this.options.pedantic) {
-    this.rules = inline.pedantic;
-  }
-}
-
-/**
- * Expose Inline Rules
- */
-
-InlineLexer.rules = inline;
-
-/**
- * Static Lexing/Compiling Method
- */
-
-InlineLexer.output = function(src, links, options) {
-  var inline = new InlineLexer(links, options);
-  return inline.output(src);
-};
-
-/**
- * Lexing/Compiling
- */
-
-InlineLexer.prototype.output = function(src) {
-  var out = ''
-    , link
-    , text
-    , href
-    , cap;
-
-  while (src) {
-    // escape
-    if (cap = this.rules.escape.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += cap[1];
-      continue;
-    }
-
-    // autolink
-    if (cap = this.rules.autolink.exec(src)) {
-      src = src.substring(cap[0].length);
-      if (cap[2] === '@') {
-        text = cap[1].charAt(6) === ':'
-          ? this.mangle(cap[1].substring(7))
-          : this.mangle(cap[1]);
-        href = this.mangle('mailto:') + text;
+    if (options.lazyInit) { // allows controlled initialization
+      // parse angular expression for dynamic ids
+      if (!!$attrs.id &&
+      	  // starts with, at position 0
+	  $attrs.id.indexOf(exprStartSymbol, 0) === 0 &&
+	  // ends with
+	  $attrs.id.indexOf(exprEndSymbol, $attrs.id.length - exprEndSymbol.length) !== -1) {
+        var idExpression = $attrs.id.slice(2,-2);
+        var mapId = $parse(idExpression)($scope);
       } else {
-        text = escape(cap[1]);
-        href = text;
+        var mapId = $attrs.id;
       }
-      out += this.renderer.link(href, null, text);
-      continue;
+      vm.map = {id: mapId}; //set empty, not real, map
+      NgMap.addMap(vm);
+    } else {
+      vm.initializeMap();
     }
 
-    // url (gfm)
-    if (!this.inLink && (cap = this.rules.url.exec(src))) {
-      src = src.substring(cap[0].length);
-      text = escape(cap[1]);
-      href = text;
-      out += this.renderer.link(href, null, text);
-      continue;
+    //Trigger Resize
+    if(options.triggerResize) {
+      google.maps.event.trigger(vm.map, 'resize');
     }
 
-    // tag
-    if (cap = this.rules.tag.exec(src)) {
-      if (!this.inLink && /^<a /i.test(cap[0])) {
-        this.inLink = true;
-      } else if (this.inLink && /^<\/a>/i.test(cap[0])) {
-        this.inLink = false;
+    $element.bind('$destroy', function() {
+      NgMapPool.returnMapInstance(vm.map);
+      NgMap.deleteMap(vm);
+    });
+  }; // __MapController
+
+  __MapController.$inject = [
+    '$scope', '$element', '$attrs', '$parse', '$interpolate', 'Attr2MapOptions', 'NgMap', 'NgMapPool', 'escapeRegexpFilter'
+  ];
+  angular.module('ngMap').controller('__MapController', __MapController);
+})();
+
+/**
+ * @ngdoc directive
+ * @name bicycling-layer
+ * @param Attr2Options {service}
+ *   convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ *
+ *   <map zoom="13" center="34.04924594193164, -118.24104309082031">
+ *     <bicycling-layer></bicycling-layer>
+ *    </map>
+ */
+(function() {
+  'use strict';
+  var parser;
+
+  var linkFunc = function(scope, element, attrs, mapController) {
+    mapController = mapController[0]||mapController[1];
+    var orgAttrs = parser.orgAttributes(element);
+    var filtered = parser.filter(attrs);
+    var options = parser.getOptions(filtered, {scope: scope});
+    var events = parser.getEvents(scope, filtered);
+
+    void 0;
+
+    var layer = getLayer(options, events);
+    mapController.addObject('bicyclingLayers', layer);
+    mapController.observeAttrSetObj(orgAttrs, attrs, layer);  //observers
+    element.bind('$destroy', function() {
+      mapController.deleteObject('bicyclingLayers', layer);
+    });
+  };
+
+  var getLayer = function(options, events) {
+    var layer = new google.maps.BicyclingLayer(options);
+    for (var eventName in events) {
+      google.maps.event.addListener(layer, eventName, events[eventName]);
+    }
+    return layer;
+  };
+
+  var bicyclingLayer= function(Attr2MapOptions) {
+    parser = Attr2MapOptions;
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc
+     };
+  };
+  bicyclingLayer.$inject = ['Attr2MapOptions'];
+
+  angular.module('ngMap').directive('bicyclingLayer', bicyclingLayer);
+})();
+
+/**
+ * @ngdoc directive
+ * @name custom-control
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @param $compile {service} AngularJS $compile service
+ * @description
+ *   Build custom control and set to the map with position
+ *
+ *   Requires:  map directive
+ *
+ *   Restrict To:  Element
+ *
+ * @attr {String} position position of this control
+ *        i.e. TOP_RIGHT
+ * @attr {Number} index index of the control
+ * @example
+ *
+ * Example:
+ *  <map center="41.850033,-87.6500523" zoom="3">
+ *    <custom-control id="home" position="TOP_LEFT" index="1">
+ *      <div style="background-color: white;">
+ *        <b>Home</b>
+ *      </div>
+ *    </custom-control>
+ *  </map>
+ *
+ */
+(function() {
+  'use strict';
+  var parser, NgMap;
+
+  var linkFunc = function(scope, element, attrs, mapController, $transclude) {
+    mapController = mapController[0]||mapController[1];
+    var filtered = parser.filter(attrs);
+    var options = parser.getOptions(filtered, {scope: scope});
+    var events = parser.getEvents(scope, filtered);
+
+    /**
+     * build a custom control element
+     */
+    var customControlEl = element[0].parentElement.removeChild(element[0]);
+    var content = $transclude();
+    angular.element(customControlEl).append(content);
+
+    /**
+     * set events
+     */
+    for (var eventName in events) {
+      google.maps.event.addDomListener(customControlEl, eventName, events[eventName]);
+    }
+
+    mapController.addObject('customControls', customControlEl);
+    var position = options.position;
+    mapController.map.controls[google.maps.ControlPosition[position]].push(customControlEl);
+
+    element.bind('$destroy', function() {
+      mapController.deleteObject('customControls', customControlEl);
+    });
+  };
+
+  var customControl =  function(Attr2MapOptions, _NgMap_)  {
+    parser = Attr2MapOptions, NgMap = _NgMap_;
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc,
+      transclude: true
+    }; // return
+  };
+  customControl.$inject = ['Attr2MapOptions', 'NgMap'];
+
+  angular.module('ngMap').directive('customControl', customControl);
+})();
+
+/**
+ * @ngdoc directive
+ * @memberof ngmap
+ * @name custom-marker
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @param $timeout {service} AngularJS $timeout
+ * @description
+ *   Marker with html
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @attr {String} position required, position on map
+ * @attr {Number} z-index optional
+ * @attr {Boolean} visible optional
+ * @example
+ *
+ * Example:
+ *   <map center="41.850033,-87.6500523" zoom="3">
+ *     <custom-marker position="41.850033,-87.6500523">
+ *       <div>
+ *         <b>Home</b>
+ *       </div>
+ *     </custom-marker>
+ *   </map>
+ *
+ */
+/* global document */
+(function() {
+  'use strict';
+  var parser, $timeout, $compile, NgMap;
+
+  var CustomMarker = function(options) {
+    options = options || {};
+
+    this.el = document.createElement('div');
+    this.el.style.display = 'inline-block';
+    this.el.style.visibility = "hidden";
+    this.visible = true;
+    for (var key in options) { /* jshint ignore:line */
+     this[key] = options[key];
+    }
+  };
+
+  var setCustomMarker = function() {
+
+    CustomMarker.prototype = new google.maps.OverlayView();
+
+    CustomMarker.prototype.setContent = function(html, scope) {
+      this.el.innerHTML = html;
+      this.el.style.position = 'absolute';
+      if (scope) {
+        $compile(angular.element(this.el).contents())(scope);
       }
-      src = src.substring(cap[0].length);
-      out += this.options.sanitize
-        ? this.options.sanitizer
-          ? this.options.sanitizer(cap[0])
-          : escape(cap[0])
-        : cap[0]
-      continue;
-    }
+    };
 
-    // link
-    if (cap = this.rules.link.exec(src)) {
-      src = src.substring(cap[0].length);
-      this.inLink = true;
-      out += this.outputLink(cap, {
-        href: cap[2],
-        title: cap[3]
-      });
-      this.inLink = false;
-      continue;
-    }
+    CustomMarker.prototype.getDraggable = function() {
+      return this.draggable;
+    };
 
-    // reflink, nolink
-    if ((cap = this.rules.reflink.exec(src))
-        || (cap = this.rules.nolink.exec(src))) {
-      src = src.substring(cap[0].length);
-      link = (cap[2] || cap[1]).replace(/\s+/g, ' ');
-      link = this.links[link.toLowerCase()];
-      if (!link || !link.href) {
-        out += cap[0].charAt(0);
-        src = cap[0].substring(1) + src;
-        continue;
+    CustomMarker.prototype.setDraggable = function(draggable) {
+      this.draggable = draggable;
+    };
+
+    CustomMarker.prototype.getPosition = function() {
+      return this.position;
+    };
+
+    CustomMarker.prototype.setPosition = function(position) {
+      position && (this.position = position); /* jshint ignore:line */
+      var _this = this;
+      if (this.getProjection() && typeof this.position.lng == 'function') {
+        void 0;
+        var setPosition = function() {
+          if (!_this.getProjection()) { return; }
+          var posPixel = _this.getProjection().fromLatLngToDivPixel(_this.position);
+          var x = Math.round(posPixel.x - (_this.el.offsetWidth/2));
+          var y = Math.round(posPixel.y - _this.el.offsetHeight - 10); // 10px for anchor
+          _this.el.style.left = x + "px";
+          _this.el.style.top = y + "px";
+          _this.el.style.visibility = "visible";
+        };
+        if (_this.el.offsetWidth && _this.el.offsetHeight) {
+          setPosition();
+        } else {
+          //delayed left/top calculation when width/height are not set instantly
+          $timeout(setPosition, 300);
+        }
       }
-      this.inLink = true;
-      out += this.outputLink(cap, link);
-      this.inLink = false;
-      continue;
-    }
+    };
 
-    // strong
-    if (cap = this.rules.strong.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.strong(this.output(cap[2] || cap[1]));
-      continue;
-    }
+    CustomMarker.prototype.setZIndex = function(zIndex) {
+      zIndex && (this.zIndex = zIndex); /* jshint ignore:line */
+      this.el.style.zIndex = this.zIndex;
+    };
 
-    // em
-    if (cap = this.rules.em.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.em(this.output(cap[2] || cap[1]));
-      continue;
-    }
+    CustomMarker.prototype.getVisible = function() {
+      return this.visible;
+    };
 
-    // code
-    if (cap = this.rules.code.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.codespan(escape(cap[2], true));
-      continue;
-    }
+    CustomMarker.prototype.setVisible = function(visible) {
+      this.el.style.display = visible ? 'inline-block' : 'none';
+      this.visible = visible;
+    };
 
-    // br
-    if (cap = this.rules.br.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.br();
-      continue;
-    }
+    CustomMarker.prototype.addClass = function(className) {
+      var classNames = this.el.className.trim().split(' ');
+      (classNames.indexOf(className) == -1) && classNames.push(className); /* jshint ignore:line */
+      this.el.className = classNames.join(' ');
+    };
 
-    // del (gfm)
-    if (cap = this.rules.del.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.del(this.output(cap[1]));
-      continue;
-    }
+    CustomMarker.prototype.removeClass = function(className) {
+      var classNames = this.el.className.split(' ');
+      var index = classNames.indexOf(className);
+      (index > -1) && classNames.splice(index, 1); /* jshint ignore:line */
+      this.el.className = classNames.join(' ');
+    };
 
-    // text
-    if (cap = this.rules.text.exec(src)) {
-      src = src.substring(cap[0].length);
-      out += this.renderer.text(escape(this.smartypants(cap[0])));
-      continue;
-    }
+    CustomMarker.prototype.onAdd = function() {
+      this.getPanes().overlayMouseTarget.appendChild(this.el);
+    };
 
-    if (src) {
-      throw new
-        Error('Infinite loop on byte: ' + src.charCodeAt(0));
-    }
-  }
+    CustomMarker.prototype.draw = function() {
+      this.setPosition();
+      this.setZIndex(this.zIndex);
+      this.setVisible(this.visible);
+    };
 
-  return out;
-};
+    CustomMarker.prototype.onRemove = function() {
+      this.el.parentNode.removeChild(this.el);
+      //this.el = null;
+    };
+  };
 
-/**
- * Compile Link
- */
+  var linkFunc = function(orgHtml, varsToWatch) {
+    //console.log('orgHtml', orgHtml, 'varsToWatch', varsToWatch);
 
-InlineLexer.prototype.outputLink = function(cap, link) {
-  var href = escape(link.href)
-    , title = link.title ? escape(link.title) : null;
+    return function(scope, element, attrs, mapController) {
+      mapController = mapController[0]||mapController[1];
+      var orgAttrs = parser.orgAttributes(element);
 
-  return cap[0].charAt(0) !== '!'
-    ? this.renderer.link(href, title, this.output(cap[1]))
-    : this.renderer.image(href, title, escape(cap[1]));
-};
+      var filtered = parser.filter(attrs);
+      var options = parser.getOptions(filtered, {scope: scope});
+      var events = parser.getEvents(scope, filtered);
 
-/**
- * Smartypants Transformations
- */
+      /**
+       * build a custom marker element
+       */
+      element[0].style.display = 'none';
+      void 0;
+      var customMarker = new CustomMarker(options);
 
-InlineLexer.prototype.smartypants = function(text) {
-  if (!this.options.smartypants) return text;
-  return text
-    // em-dashes
-    .replace(/---/g, '\u2014')
-    // en-dashes
-    .replace(/--/g, '\u2013')
-    // opening singles
-    .replace(/(^|[-\u2014/(\[{"\s])'/g, '$1\u2018')
-    // closing singles & apostrophes
-    .replace(/'/g, '\u2019')
-    // opening doubles
-    .replace(/(^|[-\u2014/(\[{\u2018\s])"/g, '$1\u201c')
-    // closing doubles
-    .replace(/"/g, '\u201d')
-    // ellipses
-    .replace(/\.{3}/g, '\u2026');
-};
+      $timeout(function() { //apply contents, class, and location after it is compiled
 
-/**
- * Mangle Links
- */
+        scope.$watch('[' + varsToWatch.join(',') + ']', function() {
+          customMarker.setContent(orgHtml, scope);
+        }, true);
 
-InlineLexer.prototype.mangle = function(text) {
-  if (!this.options.mangle) return text;
-  var out = ''
-    , l = text.length
-    , i = 0
-    , ch;
+        customMarker.setContent(element[0].innerHTML, scope);
+        var classNames = element[0].firstElementChild.className;
+        customMarker.addClass('custom-marker');
+        customMarker.addClass(classNames);
+        void 0;
 
-  for (; i < l; i++) {
-    ch = text.charCodeAt(i);
-    if (Math.random() > 0.5) {
-      ch = 'x' + ch.toString(16);
-    }
-    out += '&#' + ch + ';';
-  }
-
-  return out;
-};
-
-/**
- * Renderer
- */
-
-function Renderer(options) {
-  this.options = options || {};
-}
-
-Renderer.prototype.code = function(code, lang, escaped) {
-  if (this.options.highlight) {
-    var out = this.options.highlight(code, lang);
-    if (out != null && out !== code) {
-      escaped = true;
-      code = out;
-    }
-  }
-
-  if (!lang) {
-    return '<pre><code>'
-      + (escaped ? code : escape(code, true))
-      + '\n</code></pre>';
-  }
-
-  return '<pre><code class="'
-    + this.options.langPrefix
-    + escape(lang, true)
-    + '">'
-    + (escaped ? code : escape(code, true))
-    + '\n</code></pre>\n';
-};
-
-Renderer.prototype.blockquote = function(quote) {
-  return '<blockquote>\n' + quote + '</blockquote>\n';
-};
-
-Renderer.prototype.html = function(html) {
-  return html;
-};
-
-Renderer.prototype.heading = function(text, level, raw) {
-  return '<h'
-    + level
-    + ' id="'
-    + this.options.headerPrefix
-    + raw.toLowerCase().replace(/[^\w]+/g, '-')
-    + '">'
-    + text
-    + '</h'
-    + level
-    + '>\n';
-};
-
-Renderer.prototype.hr = function() {
-  return this.options.xhtml ? '<hr/>\n' : '<hr>\n';
-};
-
-Renderer.prototype.list = function(body, ordered) {
-  var type = ordered ? 'ol' : 'ul';
-  return '<' + type + '>\n' + body + '</' + type + '>\n';
-};
-
-Renderer.prototype.listitem = function(text) {
-  return '<li>' + text + '</li>\n';
-};
-
-Renderer.prototype.paragraph = function(text) {
-  return '<p>' + text + '</p>\n';
-};
-
-Renderer.prototype.table = function(header, body) {
-  return '<table>\n'
-    + '<thead>\n'
-    + header
-    + '</thead>\n'
-    + '<tbody>\n'
-    + body
-    + '</tbody>\n'
-    + '</table>\n';
-};
-
-Renderer.prototype.tablerow = function(content) {
-  return '<tr>\n' + content + '</tr>\n';
-};
-
-Renderer.prototype.tablecell = function(content, flags) {
-  var type = flags.header ? 'th' : 'td';
-  var tag = flags.align
-    ? '<' + type + ' style="text-align:' + flags.align + '">'
-    : '<' + type + '>';
-  return tag + content + '</' + type + '>\n';
-};
-
-// span level renderer
-Renderer.prototype.strong = function(text) {
-  return '<strong>' + text + '</strong>';
-};
-
-Renderer.prototype.em = function(text) {
-  return '<em>' + text + '</em>';
-};
-
-Renderer.prototype.codespan = function(text) {
-  return '<code>' + text + '</code>';
-};
-
-Renderer.prototype.br = function() {
-  return this.options.xhtml ? '<br/>' : '<br>';
-};
-
-Renderer.prototype.del = function(text) {
-  return '<del>' + text + '</del>';
-};
-
-Renderer.prototype.link = function(href, title, text) {
-  if (this.options.sanitize) {
-    try {
-      var prot = decodeURIComponent(unescape(href))
-        .replace(/[^\w:]/g, '')
-        .toLowerCase();
-    } catch (e) {
-      return '';
-    }
-    if (prot.indexOf('javascript:') === 0 || prot.indexOf('vbscript:') === 0 || prot.indexOf('data:') === 0) {
-      return '';
-    }
-  }
-  var out = '<a href="' + href + '"';
-  if (title) {
-    out += ' title="' + title + '"';
-  }
-  out += '>' + text + '</a>';
-  return out;
-};
-
-Renderer.prototype.image = function(href, title, text) {
-  var out = '<img src="' + href + '" alt="' + text + '"';
-  if (title) {
-    out += ' title="' + title + '"';
-  }
-  out += this.options.xhtml ? '/>' : '>';
-  return out;
-};
-
-Renderer.prototype.text = function(text) {
-  return text;
-};
-
-/**
- * Parsing & Compiling
- */
-
-function Parser(options) {
-  this.tokens = [];
-  this.token = null;
-  this.options = options || marked.defaults;
-  this.options.renderer = this.options.renderer || new Renderer;
-  this.renderer = this.options.renderer;
-  this.renderer.options = this.options;
-}
-
-/**
- * Static Parse Method
- */
-
-Parser.parse = function(src, options, renderer) {
-  var parser = new Parser(options, renderer);
-  return parser.parse(src);
-};
-
-/**
- * Parse Loop
- */
-
-Parser.prototype.parse = function(src) {
-  this.inline = new InlineLexer(src.links, this.options, this.renderer);
-  this.tokens = src.reverse();
-
-  var out = '';
-  while (this.next()) {
-    out += this.tok();
-  }
-
-  return out;
-};
-
-/**
- * Next Token
- */
-
-Parser.prototype.next = function() {
-  return this.token = this.tokens.pop();
-};
-
-/**
- * Preview Next Token
- */
-
-Parser.prototype.peek = function() {
-  return this.tokens[this.tokens.length - 1] || 0;
-};
-
-/**
- * Parse Text Tokens
- */
-
-Parser.prototype.parseText = function() {
-  var body = this.token.text;
-
-  while (this.peek().type === 'text') {
-    body += '\n' + this.next().text;
-  }
-
-  return this.inline.output(body);
-};
-
-/**
- * Parse Current Token
- */
-
-Parser.prototype.tok = function() {
-  switch (this.token.type) {
-    case 'space': {
-      return '';
-    }
-    case 'hr': {
-      return this.renderer.hr();
-    }
-    case 'heading': {
-      return this.renderer.heading(
-        this.inline.output(this.token.text),
-        this.token.depth,
-        this.token.text);
-    }
-    case 'code': {
-      return this.renderer.code(this.token.text,
-        this.token.lang,
-        this.token.escaped);
-    }
-    case 'table': {
-      var header = ''
-        , body = ''
-        , i
-        , row
-        , cell
-        , flags
-        , j;
-
-      // header
-      cell = '';
-      for (i = 0; i < this.token.header.length; i++) {
-        flags = { header: true, align: this.token.align[i] };
-        cell += this.renderer.tablecell(
-          this.inline.output(this.token.header[i]),
-          { header: true, align: this.token.align[i] }
-        );
-      }
-      header += this.renderer.tablerow(cell);
-
-      for (i = 0; i < this.token.cells.length; i++) {
-        row = this.token.cells[i];
-
-        cell = '';
-        for (j = 0; j < row.length; j++) {
-          cell += this.renderer.tablecell(
-            this.inline.output(row[j]),
-            { header: false, align: this.token.align[j] }
+        if (!(options.position instanceof google.maps.LatLng)) {
+          NgMap.getGeoLocation(options.position).then(
+                function(latlng) {
+                  customMarker.setPosition(latlng);
+                }
           );
         }
 
-        body += this.renderer.tablerow(cell);
+      });
+
+      void 0;
+      for (var eventName in events) { /* jshint ignore:line */
+        google.maps.event.addDomListener(
+          customMarker.el, eventName, events[eventName]);
       }
-      return this.renderer.table(header, body);
-    }
-    case 'blockquote_start': {
-      var body = '';
+      mapController.addObject('customMarkers', customMarker);
 
-      while (this.next().type !== 'blockquote_end') {
-        body += this.tok();
-      }
+      //set observers
+      mapController.observeAttrSetObj(orgAttrs, attrs, customMarker);
 
-      return this.renderer.blockquote(body);
-    }
-    case 'list_start': {
-      var body = ''
-        , ordered = this.token.ordered;
+      element.bind('$destroy', function() {
+        //Is it required to remove event listeners when DOM is removed?
+        mapController.deleteObject('customMarkers', customMarker);
+      });
 
-      while (this.next().type !== 'list_end') {
-        body += this.tok();
-      }
-
-      return this.renderer.list(body, ordered);
-    }
-    case 'list_item_start': {
-      var body = '';
-
-      while (this.next().type !== 'list_item_end') {
-        body += this.token.type === 'text'
-          ? this.parseText()
-          : this.tok();
-      }
-
-      return this.renderer.listitem(body);
-    }
-    case 'loose_item_start': {
-      var body = '';
-
-      while (this.next().type !== 'list_item_end') {
-        body += this.tok();
-      }
-
-      return this.renderer.listitem(body);
-    }
-    case 'html': {
-      var html = !this.token.pre && !this.options.pedantic
-        ? this.inline.output(this.token.text)
-        : this.token.text;
-      return this.renderer.html(html);
-    }
-    case 'paragraph': {
-      return this.renderer.paragraph(this.inline.output(this.token.text));
-    }
-    case 'text': {
-      return this.renderer.paragraph(this.parseText());
-    }
-  }
-};
-
-/**
- * Helpers
- */
-
-function escape(html, encode) {
-  return html
-    .replace(!encode ? /&(?!#?\w+;)/g : /&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
-function unescape(html) {
-	// explicitly match decimal, hex, and named HTML entities 
-  return html.replace(/&(#(?:\d+)|(?:#x[0-9A-Fa-f]+)|(?:\w+));?/g, function(_, n) {
-    n = n.toLowerCase();
-    if (n === 'colon') return ':';
-    if (n.charAt(0) === '#') {
-      return n.charAt(1) === 'x'
-        ? String.fromCharCode(parseInt(n.substring(2), 16))
-        : String.fromCharCode(+n.substring(1));
-    }
-    return '';
-  });
-}
-
-function replace(regex, opt) {
-  regex = regex.source;
-  opt = opt || '';
-  return function self(name, val) {
-    if (!name) return new RegExp(regex, opt);
-    val = val.source || val;
-    val = val.replace(/(^|[^\[])\^/g, '$1');
-    regex = regex.replace(name, val);
-    return self;
+    }; // linkFunc
   };
-}
 
-function noop() {}
-noop.exec = noop;
 
-function merge(obj) {
-  var i = 1
-    , target
-    , key;
+  var customMarkerDirective = function(
+      _$timeout_, _$compile_, $interpolate, Attr2MapOptions, _NgMap_, escapeRegExp
+    )  {
+    parser = Attr2MapOptions;
+    $timeout = _$timeout_;
+    $compile = _$compile_;
+    NgMap = _NgMap_;
 
-  for (; i < arguments.length; i++) {
-    target = arguments[i];
-    for (key in target) {
-      if (Object.prototype.hasOwnProperty.call(target, key)) {
-        obj[key] = target[key];
+    var exprStartSymbol = $interpolate.startSymbol();
+    var exprEndSymbol = $interpolate.endSymbol();
+    var exprRegExp = new RegExp(escapeRegExp(exprStartSymbol) + '([^' + exprEndSymbol.substring(0, 1) + ']+)' + escapeRegExp(exprEndSymbol), 'g');
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      compile: function(element) {
+        setCustomMarker();
+        element[0].style.display ='none';
+        var orgHtml = element.html();
+        var matches = orgHtml.match(exprRegExp);
+        var varsToWatch = [];
+        //filter out that contains '::', 'this.'
+        (matches || []).forEach(function(match) {
+          var toWatch = match.replace(exprStartSymbol,'').replace(exprEndSymbol,'');
+          if (match.indexOf('::') == -1 &&
+            match.indexOf('this.') == -1 &&
+            varsToWatch.indexOf(toWatch) == -1) {
+            varsToWatch.push(match.replace(exprStartSymbol,'').replace(exprEndSymbol,''));
+          }
+        });
+
+        return linkFunc(orgHtml, varsToWatch);
       }
-    }
-  }
+    }; // return
+  };// function
+  customMarkerDirective.$inject =
+    ['$timeout', '$compile', '$interpolate', 'Attr2MapOptions', 'NgMap', 'escapeRegexpFilter'];
 
-  return obj;
-}
-
+  angular.module('ngMap').directive('customMarker', customMarkerDirective);
+})();
 
 /**
- * Marked
+ * @ngdoc directive
+ * @name directions
+ * @description
+ *   Enable directions on map.
+ *   e.g., origin, destination, draggable, waypoints, etc
+ *
+ *   Requires:  map directive
+ *
+ *   Restrict To:  Element
+ *
+ * @attr {String} DirectionsRendererOptions
+ *   [Any DirectionsRendererOptions](https://developers.google.com/maps/documentation/javascript/reference#DirectionsRendererOptions)
+ * @attr {String} DirectionsRequestOptions
+ *   [Any DirectionsRequest options](https://developers.google.com/maps/documentation/javascript/reference#DirectionsRequest)
+ * @example
+ *  <map zoom="14" center="37.7699298, -122.4469157">
+ *    <directions
+ *      draggable="true"
+ *      panel="directions-panel"
+ *      travel-mode="{{travelMode}}"
+ *      waypoints="[{location:'kingston', stopover:true}]"
+ *      origin="{{origin}}"
+ *      destination="{{destination}}">
+ *    </directions>
+ *  </map>
  */
+/* global document */
+(function() {
+  'use strict';
+  var NgMap, $timeout, NavigatorGeolocation;
 
-function marked(src, opt, callback) {
-  if (callback || typeof opt === 'function') {
-    if (!callback) {
-      callback = opt;
-      opt = null;
+  var getDirectionsRenderer = function(options, events) {
+    if (options.panel) {
+      options.panel = document.getElementById(options.panel) ||
+        document.querySelector(options.panel);
+    }
+    var renderer = new google.maps.DirectionsRenderer(options);
+    for (var eventName in events) {
+      google.maps.event.addListener(renderer, eventName, events[eventName]);
+    }
+    return renderer;
+  };
+
+  var updateRoute = function(renderer, options) {
+    var directionsService = new google.maps.DirectionsService();
+
+    /* filter out valid keys only for DirectionsRequest object*/
+    var request = options;
+    request.travelMode = request.travelMode || 'DRIVING';
+    var validKeys = [
+      'origin', 'destination', 'travelMode', 'transitOptions', 'unitSystem',
+      'durationInTraffic', 'waypoints', 'optimizeWaypoints', 
+      'provideRouteAlternatives', 'avoidHighways', 'avoidTolls', 'region'
+    ];
+    for(var key in request){
+      (validKeys.indexOf(key) === -1) && (delete request[key]);
     }
 
-    opt = merge({}, marked.defaults, opt || {});
-
-    var highlight = opt.highlight
-      , tokens
-      , pending
-      , i = 0;
-
-    try {
-      tokens = Lexer.lex(src, opt)
-    } catch (e) {
-      return callback(e);
+    if(request.waypoints) {
+      // Check fo valid values
+      if(request.waypoints == "[]" || request.waypoints === "") {
+        delete request.waypoints;
+      }
     }
 
-    pending = tokens.length;
-
-    var done = function(err) {
-      if (err) {
-        opt.highlight = highlight;
-        return callback(err);
-      }
-
-      var out;
-
-      try {
-        out = Parser.parse(tokens, opt);
-      } catch (e) {
-        err = e;
-      }
-
-      opt.highlight = highlight;
-
-      return err
-        ? callback(err)
-        : callback(null, out);
+    var showDirections = function(request) {
+      directionsService.route(request, function(response, status) {
+        if (status == google.maps.DirectionsStatus.OK) {
+          $timeout(function() {
+            renderer.setDirections(response);
+          });
+        }
+      });
     };
 
-    if (!highlight || highlight.length < 3) {
-      return done();
-    }
-
-    delete opt.highlight;
-
-    if (!pending) return done();
-
-    for (; i < tokens.length; i++) {
-      (function(token) {
-        if (token.type !== 'code') {
-          return --pending || done();
-        }
-        return highlight(token.text, token.lang, function(err, code) {
-          if (err) return done(err);
-          if (code == null || code === token.text) {
-            return --pending || done();
-          }
-          token.text = code;
-          token.escaped = true;
-          --pending || done();
+    if (request.origin && request.destination) {
+      if (request.origin == 'current-location') {
+        NavigatorGeolocation.getCurrentPosition().then(function(ll) {
+          request.origin = new google.maps.LatLng(ll.coords.latitude, ll.coords.longitude);
+          showDirections(request);
         });
-      })(tokens[i]);
+      } else if (request.destination == 'current-location') {
+        NavigatorGeolocation.getCurrentPosition().then(function(ll) {
+          request.destination = new google.maps.LatLng(ll.coords.latitude, ll.coords.longitude);
+          showDirections(request);
+        });
+      } else {
+        showDirections(request);
+      }
     }
+  };
 
-    return;
-  }
-  try {
-    if (opt) opt = merge({}, marked.defaults, opt);
-    return Parser.parse(Lexer.lex(src, opt), opt);
-  } catch (e) {
-    e.message += '\nPlease report this to https://github.com/chjj/marked.';
-    if ((opt || marked.defaults).silent) {
-      return '<p>An error occured:</p><pre>'
-        + escape(e.message + '', true)
-        + '</pre>';
-    }
-    throw e;
-  }
-}
+  var directions = function(
+      Attr2MapOptions, _$timeout_, _NavigatorGeolocation_, _NgMap_) {
+    var parser = Attr2MapOptions;
+    NgMap = _NgMap_;
+    $timeout = _$timeout_;
+    NavigatorGeolocation = _NavigatorGeolocation_;
+
+    var linkFunc = function(scope, element, attrs, mapController) {
+      mapController = mapController[0]||mapController[1];
+
+      var orgAttrs = parser.orgAttributes(element);
+      var filtered = parser.filter(attrs);
+      var options = parser.getOptions(filtered, {scope: scope});
+      var events = parser.getEvents(scope, filtered);
+      var attrsToObserve = parser.getAttrsToObserve(orgAttrs);
+
+      var renderer = getDirectionsRenderer(options, events);
+      mapController.addObject('directionsRenderers', renderer);
+
+      attrsToObserve.forEach(function(attrName) {
+        (function(attrName) {
+          attrs.$observe(attrName, function(val) {
+            if (attrName == 'panel') {
+              $timeout(function(){
+                var panel =
+                  document.getElementById(val) || document.querySelector(val);
+                void 0;
+                panel && renderer.setPanel(panel);
+              });
+            } else if (options[attrName] !== val) { //apply only if changed
+              var optionValue = parser.toOptionValue(val, {key: attrName});
+              void 0;
+              options[attrName] = optionValue;
+              updateRoute(renderer, options);
+            }
+          });
+        })(attrName);
+      });
+
+      NgMap.getMap().then(function() {
+        updateRoute(renderer, options);
+      });
+      element.bind('$destroy', function() {
+        mapController.deleteObject('directionsRenderers', renderer);
+      });
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc
+    };
+  }; // var directions
+  directions.$inject =
+    ['Attr2MapOptions', '$timeout', 'NavigatorGeolocation', 'NgMap'];
+
+  angular.module('ngMap').directive('directions', directions);
+})();
+
 
 /**
- * Options
+ * @ngdoc directive
+ * @name drawing-manager
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *
+ *  <map zoom="13" center="37.774546, -122.433523" map-type-id="SATELLITE">
+ *    <drawing-manager
+ *      on-overlaycomplete="onMapOverlayCompleted()"
+ *      position="ControlPosition.TOP_CENTER"
+ *      drawingModes="POLYGON,CIRCLE"
+ *      drawingControl="true"
+ *      circleOptions="fillColor: '#FFFF00';fillOpacity: 1;strokeWeight: 5;clickable: false;zIndex: 1;editable: true;" >
+ *    </drawing-manager>
+ *  </map>
+ *
+ *  TODO: Add remove button.
+ *  currently, for our solution, we have the shapes/markers in our own
+ *  controller, and we use some css classes to change the shape button
+ *  to a remove button (<div>X</div>) and have the remove operation in our own controller.
  */
+(function() {
+  'use strict';
+  angular.module('ngMap').directive('drawingManager', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
 
-marked.options =
-marked.setOptions = function(opt) {
-  merge(marked.defaults, opt);
-  return marked;
-};
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
 
-marked.defaults = {
-  gfm: true,
-  tables: true,
-  breaks: false,
-  pedantic: false,
-  sanitize: false,
-  sanitizer: null,
-  mangle: true,
-  smartLists: false,
-  silent: false,
-  highlight: null,
-  langPrefix: 'lang-',
-  smartypants: false,
-  headerPrefix: '',
-  renderer: new Renderer,
-  xhtml: false
-};
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var controlOptions = parser.getControlOptions(filtered);
+        var events = parser.getEvents(scope, filtered);
+
+        /**
+         * set options
+         */
+        var drawingManager = new google.maps.drawing.DrawingManager({
+          drawingMode: options.drawingmode,
+          drawingControl: options.drawingcontrol,
+          drawingControlOptions: controlOptions.drawingControlOptions,
+          circleOptions:options.circleoptions,
+          markerOptions:options.markeroptions,
+          polygonOptions:options.polygonoptions,
+          polylineOptions:options.polylineoptions,
+          rectangleOptions:options.rectangleoptions
+        });
+
+        //Observers
+        attrs.$observe('drawingControlOptions', function (newValue) {
+          drawingManager.drawingControlOptions = parser.getControlOptions({drawingControlOptions: newValue}).drawingControlOptions;
+          drawingManager.setDrawingMode(null);
+          drawingManager.setMap(mapController.map);
+        });
+
+
+        /**
+         * set events
+         */
+        for (var eventName in events) {
+          google.maps.event.addListener(drawingManager, eventName, events[eventName]);
+        }
+
+        mapController.addObject('mapDrawingManager', drawingManager);
+
+        element.bind('$destroy', function() {
+          mapController.deleteObject('mapDrawingManager', drawingManager);
+        });
+      }
+    }; // return
+  }]);
+})();
 
 /**
- * Expose
+ * @ngdoc directive
+ * @name dynamic-maps-engine-layer
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *   <map zoom="14" center="[59.322506, 18.010025]">
+ *     <dynamic-maps-engine-layer
+ *       layer-id="06673056454046135537-08896501997766553811">
+ *     </dynamic-maps-engine-layer>
+ *    </map>
  */
+(function() {
+  'use strict';
 
-marked.Parser = Parser;
-marked.parser = Parser.parse;
+  angular.module('ngMap').directive('dynamicMapsEngineLayer', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
 
-marked.Renderer = Renderer;
+    var getDynamicMapsEngineLayer = function(options, events) {
+      var layer = new google.maps.visualization.DynamicMapsEngineLayer(options);
 
-marked.Lexer = Lexer;
-marked.lexer = Lexer.lex;
+      for (var eventName in events) {
+        google.maps.event.addListener(layer, eventName, events[eventName]);
+      }
 
-marked.InlineLexer = InlineLexer;
-marked.inlineLexer = InlineLexer.output;
+      return layer;
+    };
 
-marked.parse = marked;
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
 
-if (typeof module !== 'undefined' && typeof exports === 'object') {
-  module.exports = marked;
-} else if (typeof define === 'function' && define.amd) {
-  define(function() { return marked; });
-} else {
-  this.marked = marked;
-}
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
 
-}).call(function() {
-  return this || (typeof window !== 'undefined' ? window : global);
-}());
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered, events);
 
-}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],5:[function(require,module,exports){
+        var layer = getDynamicMapsEngineLayer(options, events);
+        mapController.addObject('mapsEngineLayers', layer);
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name fusion-tables-layer
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *   <map zoom="11" center="41.850033, -87.6500523">
+ *     <fusion-tables-layer query="{
+ *       select: 'Geocodable address',
+ *       from: '1mZ53Z70NsChnBMm-qEYmSDOvLXgrreLTkQUvvg'}">
+ *     </fusion-tables-layer>
+ *   </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('fusionTablesLayer', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
+
+    var getLayer = function(options, events) {
+      var layer = new google.maps.FusionTablesLayer(options);
+
+      for (var eventName in events) {
+        google.maps.event.addListener(layer, eventName, events[eventName]);
+      }
+
+      return layer;
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered, events);
+        void 0;
+
+        var layer = getLayer(options, events);
+        mapController.addObject('fusionTablesLayers', layer);
+        element.bind('$destroy', function() {
+          mapController.deleteObject('fusionTablesLayers', layer);
+        });
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name heatmap-layer
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ *
+ * <map zoom="11" center="[41.875696,-87.624207]">
+ *   <heatmap-layer data="taxiData"></heatmap-layer>
+ * </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('heatmapLayer', [
+    'Attr2MapOptions', '$window', function(Attr2MapOptions, $window) {
+    var parser = Attr2MapOptions;
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var filtered = parser.filter(attrs);
+
+        /**
+         * set options
+         */
+        var options = parser.getOptions(filtered, {scope: scope});
+        options.data = $window[attrs.data] || scope[attrs.data];
+        if (options.data instanceof Array) {
+          options.data = new google.maps.MVCArray(options.data);
+        } else {
+          throw "invalid heatmap data";
+        }
+        var layer = new google.maps.visualization.HeatmapLayer(options);
+
+        /**
+         * set events
+         */
+        var events = parser.getEvents(scope, filtered);
+        void 0;
+
+        mapController.addObject('heatmapLayers', layer);
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name info-window
+ * @param Attr2MapOptions {service}
+ *   convert html attribute to Google map api options
+ * @param $compile {service} $compile service
+ * @description
+ *  Defines infoWindow and provides compile method
+ *
+ *  Requires:  map directive
+ *
+ *  Restrict To:  Element
+ *
+ *  NOTE: this directive should **NOT** be used with `ng-repeat`
+ *  because InfoWindow itself is a template, and a template must be
+ *  reused by each marker, thus, should not be redefined repeatedly
+ *  by `ng-repeat`.
+ *
+ * @attr {Boolean} visible
+ *   Indicates to show it when map is initialized
+ * @attr {Boolean} visible-on-marker
+ *   Indicates to show it on a marker when map is initialized
+ * @attr {Expression} geo-callback
+ *   if position is an address, the expression is will be performed
+ *   when geo-lookup is successful. e.g., geo-callback="showDetail()"
+ * @attr {String} &lt;InfoWindowOption> Any InfoWindow options,
+ *   https://developers.google.com/maps/documentation/javascript/reference?csw=1#InfoWindowOptions
+ * @attr {String} &lt;InfoWindowEvent> Any InfoWindow events,
+ *   https://developers.google.com/maps/documentation/javascript/reference
+ * @example
+ * Usage:
+ *   <map MAP_ATTRIBUTES>
+ *    <info-window id="foo" ANY_OPTIONS ANY_EVENTS"></info-window>
+ *   </map>
+ *
+ * Example:
+ *  <map center="41.850033,-87.6500523" zoom="3">
+ *    <info-window id="1" position="41.850033,-87.6500523" >
+ *      <div ng-non-bindable>
+ *        Chicago, IL<br/>
+ *        LatLng: {{chicago.lat()}}, {{chicago.lng()}}, <br/>
+ *        World Coordinate: {{worldCoordinate.x}}, {{worldCoordinate.y}}, <br/>
+ *        Pixel Coordinate: {{pixelCoordinate.x}}, {{pixelCoordinate.y}}, <br/>
+ *        Tile Coordinate: {{tileCoordinate.x}}, {{tileCoordinate.y}} at Zoom Level {{map.getZoom()}}
+ *      </div>
+ *    </info-window>
+ *  </map>
+ */
+/* global google */
+(function() {
+  'use strict';
+
+  var infoWindow = function(Attr2MapOptions, $compile, $q, $templateRequest, $timeout, $parse, NgMap)  {
+    var parser = Attr2MapOptions;
+
+    var getInfoWindow = function(options, events, element) {
+      var infoWindow;
+
+      /**
+       * set options
+       */
+      if (options.position && !(options.position instanceof google.maps.LatLng)) {
+        delete options.position;
+      }
+      infoWindow = new google.maps.InfoWindow(options);
+
+      /**
+       * set events
+       */
+      for (var eventName in events) {
+        if (eventName) {
+          google.maps.event.addListener(infoWindow, eventName, events[eventName]);
+        }
+      }
+
+      /**
+       * set template and template-related functions
+       * it must have a container element with ng-non-bindable
+       */
+      var templatePromise = $q(function(resolve) {
+        if (angular.isString(element)) {
+          $templateRequest(element).then(function (requestedTemplate) {
+            resolve(angular.element(requestedTemplate).wrap('<div>').parent());
+          }, function(message) {
+            throw "info-window template request failed: " + message;
+          });
+        }
+        else {
+          resolve(element);
+        }
+      }).then(function(resolvedTemplate) {
+        var template = resolvedTemplate.html().trim();
+        if (angular.element(template).length != 1) {
+          throw "info-window working as a template must have a container";
+        }
+        infoWindow.__template = template.replace(/\s?ng-non-bindable[='"]+/,"");
+      });
+
+      infoWindow.__open = function(map, scope, anchor) {
+        templatePromise.then(function() {
+          $timeout(function() {
+            anchor && (scope.anchor = anchor);
+            var el = $compile(infoWindow.__template)(scope);
+            infoWindow.setContent(el[0]);
+            scope.$apply();
+            if (anchor && anchor.getPosition) {
+              infoWindow.open(map, anchor);
+            } else if (anchor && anchor instanceof google.maps.LatLng) {
+              infoWindow.open(map);
+              infoWindow.setPosition(anchor);
+            } else {
+              infoWindow.open(map);
+            }
+            var infoWindowContainerEl = infoWindow.content.parentElement.parentElement.parentElement;
+            infoWindowContainerEl.className = "ng-map-info-window";
+          });
+        });
+      };
+
+      return infoWindow;
+    };
+
+    var linkFunc = function(scope, element, attrs, mapController) {
+      mapController = mapController[0]||mapController[1];
+
+      element.css('display','none');
+
+      var orgAttrs = parser.orgAttributes(element);
+      var filtered = parser.filter(attrs);
+      var options = parser.getOptions(filtered, {scope: scope});
+      var events = parser.getEvents(scope, filtered);
+
+      var infoWindow = getInfoWindow(options, events, options.template || element);
+      var address;
+      if (options.position && !(options.position instanceof google.maps.LatLng)) {
+        address = options.position;
+      }
+      if (address) {
+        NgMap.getGeoLocation(address).then(function(latlng) {
+          infoWindow.setPosition(latlng);
+          infoWindow.__open(mapController.map, scope, latlng);
+          var geoCallback = attrs.geoCallback;
+          geoCallback && $parse(geoCallback)(scope);
+        });
+      }
+
+      mapController.addObject('infoWindows', infoWindow);
+      mapController.observeAttrSetObj(orgAttrs, attrs, infoWindow);
+
+      mapController.showInfoWindow =
+      mapController.map.showInfoWindow = mapController.showInfoWindow ||
+        function(p1, p2, p3) { //event, id, marker
+          var id = typeof p1 == 'string' ? p1 : p2;
+          var marker = typeof p1 == 'string' ? p2 : p3;
+          if (typeof marker == 'string') {
+            //Check if markers if defined to avoid odd 'undefined' errors
+            if (
+              typeof mapController.map.markers != "undefined"
+              && typeof mapController.map.markers[marker] != "undefined") {
+                marker = mapController.map.markers[marker];
+            } else if (
+              //additionally check if that marker is a custom marker
+              typeof mapController.map.customMarkers !== "undefined"
+              && typeof mapController.map.customMarkers[marker] !== "undefined") {
+                marker = mapController.map.customMarkers[marker];
+            } else {
+              //Better error output if marker with that id is not defined
+              throw new Error("Cant open info window for id " + marker + ". Marker or CustomMarker is not defined")
+            }
+          }
+
+          var infoWindow = mapController.map.infoWindows[id];
+          var anchor = marker ? marker : (this.getPosition ? this : null);
+          infoWindow.__open(mapController.map, scope, anchor);
+          if(mapController.singleInfoWindow) {
+            if(mapController.lastInfoWindow) {
+              scope.hideInfoWindow(mapController.lastInfoWindow);
+            }
+            mapController.lastInfoWindow = id;
+          }
+        };
+
+      mapController.hideInfoWindow =
+      mapController.map.hideInfoWindow = mapController.hideInfoWindow ||
+        function(p1, p2) {
+          var id = typeof p1 == 'string' ? p1 : p2;
+          var infoWindow = mapController.map.infoWindows[id];
+          infoWindow.close();
+        };
+
+      //TODO DEPRECATED
+      scope.showInfoWindow = mapController.map.showInfoWindow;
+      scope.hideInfoWindow = mapController.map.hideInfoWindow;
+
+      var map = infoWindow.mapId ? {id:infoWindow.mapId} : 0;
+      NgMap.getMap(map).then(function(map) {
+        infoWindow.visible && infoWindow.__open(map, scope);
+        if (infoWindow.visibleOnMarker) {
+          var markerId = infoWindow.visibleOnMarker;
+          infoWindow.__open(map, scope, map.markers[markerId]);
+        }
+      });
+
+    }; //link
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc
+    };
+
+  }; // infoWindow
+  infoWindow.$inject =
+    ['Attr2MapOptions', '$compile', '$q', '$templateRequest', '$timeout', '$parse', 'NgMap'];
+
+  angular.module('ngMap').directive('infoWindow', infoWindow);
+})();
+
+/**
+ * @ngdoc directive
+ * @name kml-layer
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   renders Kml layer on a map
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @attr {Url} url url of the kml layer
+ * @attr {KmlLayerOptions} KmlLayerOptions
+ *   (https://developers.google.com/maps/documentation/javascript/reference#KmlLayerOptions) 
+ * @attr {String} &lt;KmlLayerEvent> Any KmlLayer events,
+ *   https://developers.google.com/maps/documentation/javascript/reference
+ * @example
+ * Usage:
+ *   <map MAP_ATTRIBUTES>
+ *    <kml-layer ANY_KML_LAYER ANY_KML_LAYER_EVENTS"></kml-layer>
+ *   </map>
+ *
+ * Example:
+ *
+ * <map zoom="11" center="[41.875696,-87.624207]">
+ *   <kml-layer url="https://gmaps-samples.googlecode.com/svn/trunk/ggeoxml/cta.kml" >
+ *   </kml-layer>
+ * </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('kmlLayer', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
+
+    var getKmlLayer = function(options, events) {
+      var kmlLayer = new google.maps.KmlLayer(options);
+      for (var eventName in events) {
+        google.maps.event.addListener(kmlLayer, eventName, events[eventName]);
+      }
+      return kmlLayer;
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var orgAttrs = parser.orgAttributes(element);
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered);
+        void 0;
+
+        var kmlLayer = getKmlLayer(options, events);
+        mapController.addObject('kmlLayers', kmlLayer);
+        mapController.observeAttrSetObj(orgAttrs, attrs, kmlLayer);  //observers
+        element.bind('$destroy', function() {
+          mapController.deleteObject('kmlLayers', kmlLayer);
+        });
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name map-data
+ * @param Attr2MapOptions {service}
+ *   convert html attribute to Google map api options
+ * @description
+ *   set map data
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @wn {String} method-name, run map.data[method-name] with attribute value
+ * @example
+ * Example:
+ *
+ *  <map zoom="11" center="[41.875696,-87.624207]">
+ *    <map-data load-geo-json="https://storage.googleapis.com/maps-devrel/google.json"></map-data>
+ *   </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('mapData', [
+    'Attr2MapOptions', 'NgMap', function(Attr2MapOptions, NgMap) {
+    var parser = Attr2MapOptions;
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0] || mapController[1];
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered, events);
+
+        void 0;
+        NgMap.getMap(mapController.map.id).then(function(map) {
+          //options
+          for (var key in options) {
+            var val = options[key];
+            if (typeof scope[val] === "function") {
+              map.data[key](scope[val]);
+            } else {
+              map.data[key](val);
+            }
+          }
+
+          //events
+          for (var eventName in events) {
+            map.data.addListener(eventName, events[eventName]);
+          }
+        });
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name map-lazy-load
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @description
+ *  Requires: Delay the initialization of map directive
+ *    until the map is ready to be rendered
+ *  Restrict To: Attribute
+ *
+ * @attr {String} map-lazy-load
+ *    Maps api script source file location.
+ *    Example:
+ *      'https://maps.google.com/maps/api/js'
+ * @attr {String} map-lazy-load-params
+ *   Maps api script source file location via angular scope variable.
+ *   Also requires the map-lazy-load attribute to be present in the directive.
+ *   Example: In your controller, set
+ *     $scope.googleMapsURL = 'https://maps.google.com/maps/api/js?v=3.20&client=XXXXXenter-api-key-hereXXXX'
+ *
+ * @example
+ * Example:
+ *
+ *   <div map-lazy-load="http://maps.google.com/maps/api/js">
+ *     <map center="Brampton" zoom="10">
+ *       <marker position="Brampton"></marker>
+ *     </map>
+ *   </div>
+ *
+ *   <div map-lazy-load="http://maps.google.com/maps/api/js"
+ *        map-lazy-load-params="{{googleMapsUrl}}">
+ *     <map center="Brampton" zoom="10">
+ *       <marker position="Brampton"></marker>
+ *     </map>
+ *   </div>
+ */
+/* global window, document */
+(function() {
+  'use strict';
+  var $timeout, $compile, src, savedHtml = [], elements = [];
+
+  var preLinkFunc = function(scope, element, attrs) {
+    var mapsUrl = attrs.mapLazyLoadParams || attrs.mapLazyLoad;
+
+    if(window.google === undefined || window.google.maps === undefined) {
+      elements.push({
+        scope: scope,
+        element: element,
+        savedHtml: savedHtml[elements.length],
+      });
+
+      window.lazyLoadCallback = function() {
+        void 0;
+        $timeout(function() { /* give some time to load */
+          elements.forEach(function(elm) {
+              elm.element.html(elm.savedHtml);
+              $compile(elm.element.contents())(elm.scope);
+          });
+        }, 100);
+      };
+
+      var scriptEl = document.createElement('script');
+      void 0;
+
+      scriptEl.src = mapsUrl +
+        (mapsUrl.indexOf('?') > -1 ? '&' : '?') +
+        'callback=lazyLoadCallback';
+
+        if (!document.querySelector('script[src="' + scriptEl.src + '"]')) {
+          document.body.appendChild(scriptEl);
+        }
+    } else {
+      element.html(savedHtml);
+      $compile(element.contents())(scope);
+    }
+  };
+
+  var compileFunc = function(tElement, tAttrs) {
+
+    (!tAttrs.mapLazyLoad) && void 0;
+    savedHtml.push(tElement.html());
+    src = tAttrs.mapLazyLoad;
+
+    /**
+     * if already loaded, stop processing it
+     */
+    if(window.google !== undefined && window.google.maps !== undefined) {
+      return false;
+    }
+
+    tElement.html('');  // will compile again after script is loaded
+
+    return {
+      pre: preLinkFunc
+    };
+  };
+
+  var mapLazyLoad = function(_$compile_, _$timeout_) {
+    $compile = _$compile_, $timeout = _$timeout_;
+    return {
+      compile: compileFunc
+    };
+  };
+  mapLazyLoad.$inject = ['$compile','$timeout'];
+
+  angular.module('ngMap').directive('mapLazyLoad', mapLazyLoad);
+})();
+
+/**
+ * @ngdoc directive
+ * @name map-type
+ * @param Attr2MapOptions {service} 
+ *   convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *
+ *   <map zoom="13" center="34.04924594193164, -118.24104309082031">
+ *     <map-type name="coordinate" object="coordinateMapType"></map-type>
+ *   </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('mapType', ['$parse', 'NgMap',
+    function($parse, NgMap) {
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var mapTypeName = attrs.name, mapTypeObject;
+        if (!mapTypeName) {
+          throw "invalid map-type name";
+        }
+        mapTypeObject = $parse(attrs.object)(scope);
+        if (!mapTypeObject) {
+          throw "invalid map-type object";
+        }
+
+        NgMap.getMap().then(function(map) {
+          map.mapTypes.set(mapTypeName, mapTypeObject);
+        });
+        mapController.addObject('mapTypes', mapTypeObject);
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @memberof ngMap
+ * @name ng-map
+ * @param Attr2Options {service}
+ *  convert html attribute to Google map api options
+ * @description
+ * Implementation of {@link __MapController}
+ * Initialize a Google map within a `<div>` tag
+ *   with given options and register events
+ *
+ * @attr {Expression} map-initialized
+ *   callback function when map is initialized
+ *   e.g., map-initialized="mycallback(map)"
+ * @attr {Expression} geo-callback if center is an address or current location,
+ *   the expression is will be executed when geo-lookup is successful.
+ *   e.g., geo-callback="showMyStoreInfo()"
+ * @attr {Array} geo-fallback-center
+ *   The center of map incase geolocation failed. i.e. [0,0]
+ * @attr {Object} geo-location-options
+ *  The navigator geolocation options.
+ *  e.g., { maximumAge: 3000, timeout: 5000, enableHighAccuracy: true }.
+ *  If none specified, { timeout: 5000 }.
+ *  If timeout not specified, timeout: 5000 added
+ * @attr {Boolean} zoom-to-include-markers
+ *  When true, map boundary will be changed automatially
+ *  to include all markers when initialized
+ * @attr {Boolean} default-style
+ *  When false, the default styling,
+ *  `display:block;height:300px`, will be ignored.
+ * @attr {String} &lt;MapOption> Any Google map options,
+ *  https://developers.google.com/maps/documentation/javascript/reference?csw=1#MapOptions
+ * @attr {String} &lt;MapEvent> Any Google map events,
+ *  https://rawgit.com/allenhwkim/angularjs-google-maps/master/build/map_events.html
+ * @attr {Boolean} single-info-window
+ *  When true the map will only display one info window at the time,
+ *  if not set or false,
+ *  everytime an info window is open it will be displayed with the othe one.
+ * @attr {Boolean} trigger-resize
+ *  Default to false.  Set to true to trigger resize of the map.  Needs to be done anytime you resize the map
+ * @example
+ * Usage:
+ *   <map MAP_OPTIONS_OR_MAP_EVENTS ..>
+ *     ... Any children directives
+ *   </map>
+ *
+ * Example:
+ *   <map center="[40.74, -74.18]" on-click="doThat()">
+ *   </map>
+ *
+ *   <map geo-fallback-center="[40.74, -74.18]" zoom-to-inlude-markers="true">
+ *   </map>
+ */
+(function () {
+  'use strict';
+
+  var mapDirective = function () {
+    return {
+      restrict: 'AE',
+      controller: '__MapController',
+      controllerAs: 'ngmap'
+    };
+  };
+
+  angular.module('ngMap').directive('map', [mapDirective]);
+  angular.module('ngMap').directive('ngMap', [mapDirective]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name maps-engine-layer
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *  <map zoom="14" center="[59.322506, 18.010025]">
+ *    <maps-engine-layer layer-id="06673056454046135537-08896501997766553811">
+ *    </maps-engine-layer>
+ *  </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('mapsEngineLayer', ['Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
+
+    var getMapsEngineLayer = function(options, events) {
+      var layer = new google.maps.visualization.MapsEngineLayer(options);
+
+      for (var eventName in events) {
+        google.maps.event.addListener(layer, eventName, events[eventName]);
+      }
+
+      return layer;
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered, events);
+        void 0;
+
+        var layer = getMapsEngineLayer(options, events);
+        mapController.addObject('mapsEngineLayers', layer);
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name marker
+ * @param Attr2Options {service} convert html attribute to Google map api options
+ * @param NavigatorGeolocation It is used to find the current location
+ * @description
+ *  Draw a Google map marker on a map with given options and register events
+ *
+ *  Requires:  map directive
+ *
+ *  Restrict To:  Element
+ *
+ * @attr {String} position address, 'current', or [latitude, longitude]
+ *  example:
+ *    '1600 Pennsylvania Ave, 20500  Washingtion DC',
+ *    'current position',
+ *    '[40.74, -74.18]'
+ * @attr {Boolean} centered if set, map will be centered with this marker
+ * @attr {Expression} geo-callback if position is an address,
+ *   the expression is will be performed when geo-lookup is successful.
+ *   e.g., geo-callback="showStoreInfo()"
+ * @attr {Boolean} no-watcher if true, no attribute observer is added.
+ *   Useful for many ng-repeat
+ * @attr {String} &lt;MarkerOption>
+ *   [Any Marker options](https://developers.google.com/maps/documentation/javascript/reference?csw=1#MarkerOptions)
+ * @attr {String} &lt;MapEvent>
+ *   [Any Marker events](https://developers.google.com/maps/documentation/javascript/reference)
+ * @example
+ * Usage:
+ *   <map MAP_ATTRIBUTES>
+ *    <marker ANY_MARKER_OPTIONS ANY_MARKER_EVENTS"></MARKER>
+ *   </map>
+ *
+ * Example:
+ *   <map center="[40.74, -74.18]">
+ *    <marker position="[40.74, -74.18]" on-click="myfunc()"></div>
+ *   </map>
+ *
+ *   <map center="the cn tower">
+ *    <marker position="the cn tower" on-click="myfunc()"></div>
+ *   </map>
+ */
+/* global google */
+(function() {
+  'use strict';
+  var parser, $parse, NgMap;
+
+  var getMarker = function(options, events) {
+    var marker;
+
+    if (NgMap.defaultOptions.marker) {
+      for (var key in NgMap.defaultOptions.marker) {
+        if (typeof options[key] == 'undefined') {
+          void 0;
+          options[key] = NgMap.defaultOptions.marker[key];
+        }
+      }
+    }
+
+    if (!(options.position instanceof google.maps.LatLng)) {
+      options.position = new google.maps.LatLng(0,0);
+    }
+    marker = new google.maps.Marker(options);
+
+    /**
+     * set events
+     */
+    if (Object.keys(events).length > 0) {
+      void 0;
+    }
+    for (var eventName in events) {
+      if (eventName) {
+        google.maps.event.addListener(marker, eventName, events[eventName]);
+      }
+    }
+
+    return marker;
+  };
+
+  var linkFunc = function(scope, element, attrs, mapController) {
+    mapController = mapController[0]||mapController[1];
+
+    var orgAttrs = parser.orgAttributes(element);
+    var filtered = parser.filter(attrs);
+    var markerOptions = parser.getOptions(filtered, scope, {scope: scope});
+    var markerEvents = parser.getEvents(scope, filtered);
+    void 0;
+
+    var address;
+    if (!(markerOptions.position instanceof google.maps.LatLng)) {
+      address = markerOptions.position;
+    }
+    var marker = getMarker(markerOptions, markerEvents);
+    mapController.addObject('markers', marker);
+    if (address) {
+      NgMap.getGeoLocation(address).then(function(latlng) {
+        marker.setPosition(latlng);
+        markerOptions.centered && marker.map.setCenter(latlng);
+        var geoCallback = attrs.geoCallback;
+        geoCallback && $parse(geoCallback)(scope);
+      });
+    }
+
+    //set observers
+    mapController.observeAttrSetObj(orgAttrs, attrs, marker); /* observers */
+
+    element.bind('$destroy', function() {
+      mapController.deleteObject('markers', marker);
+    });
+  };
+
+  var marker = function(Attr2MapOptions, _$parse_, _NgMap_) {
+    parser = Attr2MapOptions;
+    $parse = _$parse_;
+    NgMap = _NgMap_;
+
+    return {
+      restrict: 'E',
+      require: ['^?map','?^ngMap'],
+      link: linkFunc
+    };
+  };
+
+  marker.$inject = ['Attr2MapOptions', '$parse', 'NgMap'];
+  angular.module('ngMap').directive('marker', marker);
+
+})();
+
+/**
+ * @ngdoc directive
+ * @name overlay-map-type
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @param $window {service}
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *
+ * <map zoom="13" center="34.04924594193164, -118.24104309082031">
+ *   <overlay-map-type index="0" object="coordinateMapType"></map-type>
+ * </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('overlayMapType', [
+    'NgMap', function(NgMap) {
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var initMethod = attrs.initMethod || "insertAt";
+        var overlayMapTypeObject = scope[attrs.object];
+
+        NgMap.getMap().then(function(map) {
+          if (initMethod == "insertAt") {
+            var index = parseInt(attrs.index, 10);
+            map.overlayMapTypes.insertAt(index, overlayMapTypeObject);
+          } else if (initMethod == "push") {
+            map.overlayMapTypes.push(overlayMapTypeObject);
+          }
+        });
+        mapController.addObject('overlayMapTypes', overlayMapTypeObject);
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name places-auto-complete
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   Provides address auto complete feature to an input element
+ *   Requires: input tag
+ *   Restrict To: Attribute
+ *
+ * @attr {AutoCompleteOptions}
+ *   [Any AutocompleteOptions](https://developers.google.com/maps/documentation/javascript/3.exp/reference#AutocompleteOptions)
+ *
+ * @example
+ * Example:
+ *   <script src="https://maps.googleapis.com/maps/api/js?libraries=places"></script>
+ *   <input places-auto-complete types="['geocode']" on-place-changed="myCallback(place)" component-restrictions="{country:'au'}"/>
+ */
+/* global google */
+(function() {
+  'use strict';
+
+  var placesAutoComplete = function(Attr2MapOptions, $timeout) {
+    var parser = Attr2MapOptions;
+
+    var linkFunc = function(scope, element, attrs, ngModelCtrl) {
+      if (attrs.placesAutoComplete ==='false') {
+        return false;
+      }
+      var filtered = parser.filter(attrs);
+      var options = parser.getOptions(filtered, {scope: scope});
+      var events = parser.getEvents(scope, filtered);
+      var autocomplete = new google.maps.places.Autocomplete(element[0], options);
+      for (var eventName in events) {
+        google.maps.event.addListener(autocomplete, eventName, events[eventName]);
+      }
+
+      var updateModel = function() {
+        $timeout(function(){
+          ngModelCtrl && ngModelCtrl.$setViewValue(element.val());
+        },100);
+      };
+      google.maps.event.addListener(autocomplete, 'place_changed', updateModel);
+      element[0].addEventListener('change', updateModel);
+
+      attrs.$observe('types', function(val) {
+        if (val) {
+          var optionValue = parser.toOptionValue(val, {key: 'types'});
+          autocomplete.setTypes(optionValue);
+        }
+      });
+	  
+	  attrs.$observe('componentRestrictions', function (val) {
+		 if (val) {
+		   autocomplete.setComponentRestrictions(scope.$eval(val));
+		 }
+	   });
+    };
+	
+    return {
+      restrict: 'A',
+      require: '?ngModel',
+      link: linkFunc
+    };
+  };
+
+  placesAutoComplete.$inject = ['Attr2MapOptions', '$timeout'];
+  angular.module('ngMap').directive('placesAutoComplete', placesAutoComplete);
+})();
+
+/**
+ * @ngdoc directive
+ * @name shape
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   Initialize a Google map shape in map with given options and register events
+ *   The shapes are:
+ *     . circle
+ *     . polygon
+ *     . polyline
+ *     . rectangle
+ *     . groundOverlay(or image)
+ *
+ *   Requires:  map directive
+ *
+ *   Restrict To:  Element
+ *
+ * @attr {Boolean} centered if set, map will be centered with this marker
+ * @attr {Expression} geo-callback if shape is a circle and the center is
+ *   an address, the expression is will be performed when geo-lookup
+ *   is successful. e.g., geo-callback="showDetail()"
+ * @attr {String} &lt;OPTIONS>
+ *   For circle, [any circle options](https://developers.google.com/maps/documentation/javascript/reference#CircleOptions)
+ *   For polygon, [any polygon options](https://developers.google.com/maps/documentation/javascript/reference#PolygonOptions)
+ *   For polyline, [any polyline options](https://developers.google.com/maps/documentation/javascript/reference#PolylineOptions)
+ *   For rectangle, [any rectangle options](https://developers.google.com/maps/documentation/javascript/reference#RectangleOptions)
+ *   For image, [any groundOverlay options](https://developers.google.com/maps/documentation/javascript/reference#GroundOverlayOptions)
+ * @attr {String} &lt;MapEvent> [Any Shape events](https://developers.google.com/maps/documentation/javascript/reference)
+ * @example
+ * Usage:
+ *   <map MAP_ATTRIBUTES>
+ *    <shape name=SHAPE_NAME ANY_SHAPE_OPTIONS ANY_SHAPE_EVENTS"></MARKER>
+ *   </map>
+ *
+ * Example:
+ *
+ *   <map zoom="11" center="[40.74, -74.18]">
+ *     <shape id="polyline" name="polyline" geodesic="true"
+ *       stroke-color="#FF0000" stroke-opacity="1.0" stroke-weight="2"
+ *       path="[[40.74,-74.18],[40.64,-74.10],[40.54,-74.05],[40.44,-74]]" >
+ *     </shape>
+ *   </map>
+ *
+ *   <map zoom="11" center="[40.74, -74.18]">
+ *     <shape id="polygon" name="polygon" stroke-color="#FF0000"
+ *       stroke-opacity="1.0" stroke-weight="2"
+ *       paths="[[40.74,-74.18],[40.64,-74.18],[40.84,-74.08],[40.74,-74.18]]" >
+ *     </shape>
+ *   </map>
+ *
+ *   <map zoom="11" center="[40.74, -74.18]">
+ *     <shape id="rectangle" name="rectangle" stroke-color='#FF0000'
+ *       stroke-opacity="0.8" stroke-weight="2"
+ *       bounds="[[40.74,-74.18], [40.78,-74.14]]" editable="true" >
+ *     </shape>
+ *   </map>
+ *
+ *   <map zoom="11" center="[40.74, -74.18]">
+ *     <shape id="circle" name="circle" stroke-color='#FF0000'
+ *       stroke-opacity="0.8"stroke-weight="2"
+ *       center="[40.70,-74.14]" radius="4000" editable="true" >
+ *     </shape>
+ *   </map>
+ *
+ *   <map zoom="11" center="[40.74, -74.18]">
+ *     <shape id="image" name="image"
+ *       url="https://www.lib.utexas.edu/maps/historical/newark_nj_1922.jpg"
+ *       bounds="[[40.71,-74.22],[40.77,-74.12]]" opacity="0.7"
+ *       clickable="true">
+ *     </shape>
+ *   </map>
+ *
+ *  For full-working example, please visit
+ *    [shape example](https://rawgit.com/allenhwkim/angularjs-google-maps/master/build/shape.html)
+ */
+/* global google */
+(function() {
+  'use strict';
+
+  var getShape = function(options, events) {
+    var shape;
+
+    var shapeName = options.name;
+    delete options.name;  //remove name bcoz it's not for options
+    void 0;
+
+    /**
+     * set options
+     */
+    switch(shapeName) {
+      case "circle":
+        if (!(options.center instanceof google.maps.LatLng)) {
+          options.center = new google.maps.LatLng(0,0);
+        } 
+        shape = new google.maps.Circle(options);
+        break;
+      case "polygon":
+        shape = new google.maps.Polygon(options);
+        break;
+      case "polyline":
+        shape = new google.maps.Polyline(options);
+        break;
+      case "rectangle":
+        shape = new google.maps.Rectangle(options);
+        break;
+      case "groundOverlay":
+      case "image":
+        var url = options.url;
+        var opts = {opacity: options.opacity, clickable: options.clickable, id:options.id};
+        shape = new google.maps.GroundOverlay(url, options.bounds, opts);
+        break;
+    }
+
+    /**
+     * set events
+     */
+    for (var eventName in events) {
+      if (events[eventName]) {
+        google.maps.event.addListener(shape, eventName, events[eventName]);
+      }
+    }
+    return shape;
+  };
+
+  var shape = function(Attr2MapOptions, $parse, NgMap) {
+    var parser = Attr2MapOptions;
+
+    var linkFunc = function(scope, element, attrs, mapController) {
+      mapController = mapController[0]||mapController[1];
+
+      var orgAttrs = parser.orgAttributes(element);
+      var filtered = parser.filter(attrs);
+      var shapeOptions = parser.getOptions(filtered, {scope: scope});
+      var shapeEvents = parser.getEvents(scope, filtered);
+
+      var address, shapeType;
+      shapeType = shapeOptions.name;
+      if (!(shapeOptions.center instanceof google.maps.LatLng)) {
+        address = shapeOptions.center;
+      }
+      var shape = getShape(shapeOptions, shapeEvents);
+      mapController.addObject('shapes', shape);
+
+      if (address && shapeType == 'circle') {
+        NgMap.getGeoLocation(address).then(function(latlng) {
+          shape.setCenter(latlng);
+          shape.centered && shape.map.setCenter(latlng);
+          var geoCallback = attrs.geoCallback;
+          geoCallback && $parse(geoCallback)(scope);
+        });
+      }
+
+      //set observers
+      mapController.observeAttrSetObj(orgAttrs, attrs, shape);
+      element.bind('$destroy', function() {
+        mapController.deleteObject('shapes', shape);
+      });
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc
+     }; // return
+  };
+  shape.$inject = ['Attr2MapOptions', '$parse', 'NgMap'];
+
+  angular.module('ngMap').directive('shape', shape);
+
+})();
+
+/**
+ * @ngdoc directive
+ * @name streetview-panorama
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @attr container Optional, id or css selector, if given, streetview will be in the given html element
+ * @attr {String} &lt;StreetViewPanoramaOption>
+ *   [Any Google StreetViewPanorama options](https://developers.google.com/maps/documentation/javascript/reference?csw=1#StreetViewPanoramaOptions)
+ * @attr {String} &lt;StreetViewPanoramaEvent>
+ *   [Any Google StreetViewPanorama events](https://developers.google.com/maps/documentation/javascript/reference#StreetViewPanorama)
+ *
+ * @example
+ *   <map zoom="11" center="[40.688738,-74.043871]" >
+ *     <street-view-panorama
+ *       click-to-go="true"
+ *       disable-default-ui="true"
+ *       disable-double-click-zoom="true"
+ *       enable-close-button="true"
+ *       pano="my-pano"
+ *       position="40.688738,-74.043871"
+ *       pov="{heading:0, pitch: 90}"
+ *       scrollwheel="false"
+ *       visible="true">
+ *     </street-view-panorama>
+ *   </map>
+ */
+/* global google, document */
+(function() {
+  'use strict';
+
+  var streetViewPanorama = function(Attr2MapOptions, NgMap) {
+    var parser = Attr2MapOptions;
+
+    var getStreetViewPanorama = function(map, options, events) {
+      var svp, container;
+      if (options.container) {
+        container = document.getElementById(options.container);
+        container = container || document.querySelector(options.container);
+      }
+      if (container) {
+        svp = new google.maps.StreetViewPanorama(container, options);
+      } else {
+        svp = map.getStreetView();
+        svp.setOptions(options);
+      }
+
+      for (var eventName in events) {
+        eventName &&
+          google.maps.event.addListener(svp, eventName, events[eventName]);
+      }
+      return svp;
+    };
+
+    var linkFunc = function(scope, element, attrs) {
+      var filtered = parser.filter(attrs);
+      var options = parser.getOptions(filtered, {scope: scope});
+      var controlOptions = parser.getControlOptions(filtered);
+      var svpOptions = angular.extend(options, controlOptions);
+
+      var svpEvents = parser.getEvents(scope, filtered);
+      void 0;
+
+      NgMap.getMap().then(function(map) {
+        var svp = getStreetViewPanorama(map, svpOptions, svpEvents);
+
+        map.setStreetView(svp);
+        (!svp.getPosition()) && svp.setPosition(map.getCenter());
+        google.maps.event.addListener(svp, 'position_changed', function() {
+          if (svp.getPosition() !== map.getCenter()) {
+            map.setCenter(svp.getPosition());
+          }
+        });
+        //needed for geo-callback
+        var listener =
+          google.maps.event.addListener(map, 'center_changed', function() {
+            svp.setPosition(map.getCenter());
+            google.maps.event.removeListener(listener);
+          });
+      });
+
+    }; //link
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+      link: linkFunc
+    };
+
+  };
+  streetViewPanorama.$inject = ['Attr2MapOptions', 'NgMap'];
+
+  angular.module('ngMap').directive('streetViewPanorama', streetViewPanorama);
+})();
+
+/**
+ * @ngdoc directive
+ * @name traffic-layer
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *
+ *   <map zoom="13" center="34.04924594193164, -118.24104309082031">
+ *     <traffic-layer></traffic-layer>
+ *    </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('trafficLayer', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
+
+    var getLayer = function(options, events) {
+      var layer = new google.maps.TrafficLayer(options);
+      for (var eventName in events) {
+        google.maps.event.addListener(layer, eventName, events[eventName]);
+      }
+      return layer;
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var orgAttrs = parser.orgAttributes(element);
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered);
+        void 0;
+
+        var layer = getLayer(options, events);
+        mapController.addObject('trafficLayers', layer);
+        mapController.observeAttrSetObj(orgAttrs, attrs, layer);  //observers
+        element.bind('$destroy', function() {
+          mapController.deleteObject('trafficLayers', layer);
+        });
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc directive
+ * @name transit-layer
+ * @param Attr2MapOptions {service} convert html attribute to Google map api options
+ * @description
+ *   Requires:  map directive
+ *   Restrict To:  Element
+ *
+ * @example
+ * Example:
+ *
+ *  <map zoom="13" center="34.04924594193164, -118.24104309082031">
+ *    <transit-layer></transit-layer>
+ *  </map>
+ */
+(function() {
+  'use strict';
+
+  angular.module('ngMap').directive('transitLayer', [
+    'Attr2MapOptions', function(Attr2MapOptions) {
+    var parser = Attr2MapOptions;
+
+    var getLayer = function(options, events) {
+      var layer = new google.maps.TransitLayer(options);
+      for (var eventName in events) {
+        google.maps.event.addListener(layer, eventName, events[eventName]);
+      }
+      return layer;
+    };
+
+    return {
+      restrict: 'E',
+      require: ['?^map','?^ngMap'],
+
+      link: function(scope, element, attrs, mapController) {
+        mapController = mapController[0]||mapController[1];
+
+        var orgAttrs = parser.orgAttributes(element);
+        var filtered = parser.filter(attrs);
+        var options = parser.getOptions(filtered, {scope: scope});
+        var events = parser.getEvents(scope, filtered);
+        void 0;
+
+        var layer = getLayer(options, events);
+        mapController.addObject('transitLayers', layer);
+        mapController.observeAttrSetObj(orgAttrs, attrs, layer);  //observers
+        element.bind('$destroy', function() {
+          mapController.deleteObject('transitLayers', layer);
+        });
+      }
+     }; // return
+  }]);
+})();
+
+/**
+ * @ngdoc filter
+ * @name camel-case
+ * @description
+ *   Converts string to camel cased
+ */
+(function() {
+  'use strict';
+
+  var SPECIAL_CHARS_REGEXP = /([\:\-\_]+(.))/g;
+  var MOZ_HACK_REGEXP = /^moz([A-Z])/;
+
+  var camelCaseFilter = function() {
+    return function(name) {
+      return name.
+        replace(SPECIAL_CHARS_REGEXP,
+          function(_, separator, letter, offset) {
+            return offset ? letter.toUpperCase() : letter;
+        }).
+        replace(MOZ_HACK_REGEXP, 'Moz$1');
+    };
+  };
+
+  angular.module('ngMap').filter('camelCase', camelCaseFilter);
+})();
+
+/**
+ * @ngdoc filter
+ * @name escape-regex
+ * @description
+ *   Escapes all regex special characters in a string
+ */
+(function() {
+  'use strict';
+
+
+
+  var escapeRegexpFilter = function() {
+    return function(string) {
+			return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
+		};
+  };
+
+  angular.module('ngMap').filter('escapeRegexp', escapeRegexpFilter);
+})();
+
+/**
+ * @ngdoc filter
+ * @name jsonize
+ * @description
+ *   Converts json-like string to json string
+ */
+(function() {
+  'use strict';
+
+  var jsonizeFilter = function() {
+    return function(str) {
+      try {       // if parsable already, return as it is
+        JSON.parse(str);
+        return str;
+      } catch(e) { // if not parsable, change little
+        return str
+          // wrap keys without quote with valid double quote
+          .replace(/([\$\w]+)\s*:/g,
+            function(_, $1) {
+              return '"'+$1+'":';
+            }
+          )
+          // replacing single quote wrapped ones to double quote
+          .replace(/'([^']+)'/g,
+            function(_, $1) {
+              return '"'+$1+'"';
+            }
+          )
+          .replace(/''/g, '""');
+      }
+    };
+  };
+
+  angular.module('ngMap').filter('jsonize', jsonizeFilter);
+})();
+
+/**
+ * @ngdoc service
+ * @name Attr2MapOptions
+ * @description
+ *   Converts tag attributes to options used by google api v3 objects
+ */
+/* global google */
+(function() {
+  'use strict';
+
+  //i.e. "2015-08-12T06:12:40.858Z"
+  var isoDateRE =
+    /^(\d{4}\-\d\d\-\d\d([tT][\d:\.]*)?)([zZ]|([+\-])(\d\d):?(\d\d))?$/;
+
+  var Attr2MapOptions = function(
+      $parse, $timeout, $log, $interpolate, NavigatorGeolocation, GeoCoder,
+      camelCaseFilter, jsonizeFilter, escapeRegExp
+    ) {
+
+    var exprStartSymbol = $interpolate.startSymbol();
+    var exprEndSymbol = $interpolate.endSymbol();
+
+    /**
+     * Returns the attributes of an element as hash
+     * @memberof Attr2MapOptions
+     * @param {HTMLElement} el html element
+     * @returns {Hash} attributes
+     */
+    var orgAttributes = function(el) {
+      (el.length > 0) && (el = el[0]);
+      var orgAttributes = {};
+      for (var i=0; i<el.attributes.length; i++) {
+        var attr = el.attributes[i];
+        orgAttributes[attr.name] = attr.value;
+      }
+      return orgAttributes;
+    };
+
+    var getJSON = function(input) {
+      var re =/^[\+\-]?[0-9\.]+,[ ]*\ ?[\+\-]?[0-9\.]+$/; //lat,lng
+      if (input.match(re)) {
+        input = "["+input+"]";
+      }
+      return JSON.parse(jsonizeFilter(input));
+    };
+    
+    var getLatLng = function(input) {
+      var output = input;
+      if (input[0].constructor == Array) { 
+        if ((input[0][0].constructor == Array && input[0][0].length == 2) || input[0][0].constructor == Object) {
+            var preoutput;
+            var outputArray = [];
+            for (var i = 0; i < input.length; i++) {
+                preoutput = input[i].map(function(el){
+                    return new google.maps.LatLng(el[0], el[1]);
+                });
+                outputArray.push(preoutput);
+            }
+            output = outputArray;
+        } else {
+            output = input.map(function(el) {
+                return new google.maps.LatLng(el[0], el[1]);
+            });
+        }
+      } else if (!isNaN(parseFloat(input[0])) && isFinite(input[0])) {
+        output = new google.maps.LatLng(output[0], output[1]);
+      }
+      return output;
+    };
+
+    var toOptionValue = function(input, options) {
+      var output;
+      try { // 1. Number?
+        output = getNumber(input);
+      } catch(err) {
+        try { // 2. JSON?
+          var output = getJSON(input);
+          if (output instanceof Array) {
+            if (output[0].constructor == Object) {
+              output = output;
+            } else if (output[0] instanceof Array) {
+              if (output[0][0].constructor == Object) {
+                output = output;
+              } else {
+                output = getLatLng(output);
+              }
+            } else {
+                output = getLatLng(output);
+            }
+          }
+          // JSON is an object (not array or null)
+          else if (output === Object(output)) {
+            // check for nested hashes and convert to Google API options
+            var newOptions = options;
+            newOptions.doNotConverStringToNumber = true;
+            output = getOptions(output, newOptions);
+          }
+        } catch(err2) {
+          // 3. Google Map Object function Expression. i.e. LatLng(80,-49)
+          if (input.match(/^[A-Z][a-zA-Z0-9]+\(.*\)$/)) {
+            try {
+              var exp = "new google.maps."+input;
+              output = eval(exp); /* jshint ignore:line */
+            } catch(e) {
+              output = input;
+            }
+          // 4. Google Map Object constant Expression. i.e. MayTypeId.HYBRID
+          } else if (input.match(/^([A-Z][a-zA-Z0-9]+)\.([A-Z]+)$/)) {
+            try {
+              var matches = input.match(/^([A-Z][a-zA-Z0-9]+)\.([A-Z]+)$/);
+              output = google.maps[matches[1]][matches[2]];
+            } catch(e) {
+              output = input;
+            }
+          // 5. Google Map Object constant Expression. i.e. HYBRID
+          } else if (input.match(/^[A-Z]+$/)) {
+            try {
+              var capitalizedKey = options.key.charAt(0).toUpperCase() +
+                options.key.slice(1);
+              if (options.key.match(/temperatureUnit|windSpeedUnit|labelColor/)) {
+                capitalizedKey = capitalizedKey.replace(/s$/,"");
+                output = google.maps.weather[capitalizedKey][input];
+              } else {
+                output = google.maps[capitalizedKey][input];
+              }
+            } catch(e) {
+              output = input;
+            }
+          // 6. Date Object as ISO String
+          } else if (input.match(isoDateRE)) {
+            try {
+              output = new Date(input);
+            } catch(e) {
+              output = input;
+            }
+          // 7. evaluate dynamically bound values
+        } else if (input.match(new RegExp('^' + escapeRegExp(exprStartSymbol))) && options.scope) {
+            try {
+              var expr = input.replace(new RegExp(escapeRegExp(exprStartSymbol)),'').replace(new RegExp(escapeRegExp(exprEndSymbol), 'g'),'');
+              output = options.scope.$eval(expr);
+            } catch (err) {
+              output = input;
+            }
+          } else {
+            output = input;
+          }
+        } // catch(err2)
+      } // catch(err)
+
+      // convert output more for center and position
+      if (
+        (options.key == 'center' || options.key == 'position') &&
+        output instanceof Array
+      ) {
+        output = new google.maps.LatLng(output[0], output[1]);
+      }
+
+      // convert output more for shape bounds
+      if (options.key == 'bounds' && output instanceof Array) {
+        output = new google.maps.LatLngBounds(output[0], output[1]);
+      }
+
+      // convert output more for shape icons
+      if (options.key == 'icons' && output instanceof Array) {
+
+        for (var i=0; i<output.length; i++) {
+          var el = output[i];
+          if (el.icon.path.match(/^[A-Z_]+$/)) {
+            el.icon.path =  google.maps.SymbolPath[el.icon.path];
+          }
+        }
+      }
+
+      // convert output more for marker icon
+      if (options.key == 'icon' && output instanceof Object) {
+        if ((""+output.path).match(/^[A-Z_]+$/)) {
+          output.path = google.maps.SymbolPath[output.path];
+        }
+        for (var key in output) { //jshint ignore:line
+          var arr = output[key];
+          if (key == "anchor" || key == "origin" || key == "labelOrigin") {
+            output[key] = new google.maps.Point(arr[0], arr[1]);
+          } else if (key == "size" || key == "scaledSize") {
+            output[key] = new google.maps.Size(arr[0], arr[1]);
+          }
+        }
+      }
+
+      return output;
+    };
+
+    var getAttrsToObserve = function(attrs) {
+      var attrsToObserve = [];
+      var exprRegExp = new RegExp(escapeRegExp(exprStartSymbol) + '.*' + escapeRegExp(exprEndSymbol), 'g');
+
+      if (!attrs.noWatcher) {
+        for (var attrName in attrs) { //jshint ignore:line
+          var attrValue = attrs[attrName];
+          if (attrValue && attrValue.match(exprRegExp)) { // if attr value is {{..}}
+            attrsToObserve.push(camelCaseFilter(attrName));
+          }
+        }
+      }
+
+      return attrsToObserve;
+    };
+
+    /**
+     * filters attributes by skipping angularjs methods $.. $$..
+     * @memberof Attr2MapOptions
+     * @param {Hash} attrs tag attributes
+     * @returns {Hash} filterd attributes
+     */
+    var filter = function(attrs) {
+      var options = {};
+      for(var key in attrs) {
+        if (key.match(/^\$/) || key.match(/^ng[A-Z]/)) {
+          void(0);
+        } else {
+          options[key] = attrs[key];
+        }
+      }
+      return options;
+    };
+
+    /**
+     * converts attributes hash to Google Maps API v3 options
+     * ```
+     *  . converts numbers to number
+     *  . converts class-like string to google maps instance
+     *    i.e. `LatLng(1,1)` to `new google.maps.LatLng(1,1)`
+     *  . converts constant-like string to google maps constant
+     *    i.e. `MapTypeId.HYBRID` to `google.maps.MapTypeId.HYBRID`
+     *    i.e. `HYBRID"` to `google.maps.MapTypeId.HYBRID`
+     * ```
+     * @memberof Attr2MapOptions
+     * @param {Hash} attrs tag attributes
+     * @param {Hash} options
+     * @returns {Hash} options converted attributess
+     */
+    var getOptions = function(attrs, params) {
+      params = params || {};
+      var options = {};
+      for(var key in attrs) {
+        if (attrs[key] || attrs[key] === 0) {
+          if (key.match(/^on[A-Z]/)) { //skip events, i.e. on-click
+            continue;
+          } else if (key.match(/ControlOptions$/)) { // skip controlOptions
+            continue;
+          } else {
+            // nested conversions need to be typechecked
+            // (non-strings are fully converted)
+            if (typeof attrs[key] !== 'string') {
+              options[key] = attrs[key];
+            } else {
+              if (params.doNotConverStringToNumber &&
+                attrs[key].match(/^[0-9]+$/)
+              ) {
+                options[key] = attrs[key];
+              } else {
+                options[key] = toOptionValue(attrs[key], {key: key, scope: params.scope});
+              }
+            }
+          }
+        } // if (attrs[key])
+      } // for(var key in attrs)
+      return options;
+    };
+
+    /**
+     * converts attributes hash to scope-specific event function
+     * @memberof Attr2MapOptions
+     * @param {scope} scope angularjs scope
+     * @param {Hash} attrs tag attributes
+     * @returns {Hash} events converted events
+     */
+    var getEvents = function(scope, attrs) {
+      var events = {};
+      var toLowercaseFunc = function($1){
+        return "_"+$1.toLowerCase();
+      };
+      var EventFunc = function(attrValue) {
+        // funcName(argsStr)
+        var matches = attrValue.match(/([^\(]+)\(([^\)]*)\)/);
+        var funcName = matches[1];
+        var argsStr = matches[2].replace(/event[ ,]*/,'');  //remove string 'event'
+        var argsExpr = $parse("["+argsStr+"]"); //for perf when triggering event
+        return function(event) {
+          var args = argsExpr(scope); //get args here to pass updated model values
+          function index(obj,i) {return obj[i];}
+          var f = funcName.split('.').reduce(index, scope);
+          f && f.apply(this, [event].concat(args));
+          $timeout( function() {
+            scope.$apply();
+          });
+        };
+      };
+
+      for(var key in attrs) {
+        if (attrs[key]) {
+          if (!key.match(/^on[A-Z]/)) { //skip if not events
+            continue;
+          }
+
+          //get event name as underscored. i.e. zoom_changed
+          var eventName = key.replace(/^on/,'');
+          eventName = eventName.charAt(0).toLowerCase() + eventName.slice(1);
+          eventName = eventName.replace(/([A-Z])/g, toLowercaseFunc);
+
+          var attrValue = attrs[key];
+          events[eventName] = new EventFunc(attrValue);
+        }
+      }
+      return events;
+    };
+
+    /**
+     * control means map controls, i.e streetview, pan, etc, not a general control
+     * @memberof Attr2MapOptions
+     * @param {Hash} filtered filtered tag attributes
+     * @returns {Hash} Google Map options
+     */
+    var getControlOptions = function(filtered) {
+      var controlOptions = {};
+      if (typeof filtered != 'object') {
+        return false;
+      }
+
+      for (var attr in filtered) {
+        if (filtered[attr]) {
+          if (!attr.match(/(.*)ControlOptions$/)) {
+            continue; // if not controlOptions, skip it
+          }
+
+          //change invalid json to valid one, i.e. {foo:1} to {"foo": 1}
+          var orgValue = filtered[attr];
+          var newValue = orgValue.replace(/'/g, '"');
+          newValue = newValue.replace(/([^"]+)|("[^"]+")/g, function($0, $1, $2) {
+            if ($1) {
+              return $1.replace(/([a-zA-Z0-9]+?):/g, '"$1":');
+            } else {
+              return $2;
+            }
+          });
+          try {
+            var options = JSON.parse(newValue);
+            for (var key in options) { //assign the right values
+              if (options[key]) {
+                var value = options[key];
+                if (typeof value === 'string') {
+                  value = value.toUpperCase();
+                } else if (key === "mapTypeIds") {
+                  value = value.map( function(str) {
+                    if (str.match(/^[A-Z]+$/)) { // if constant
+                      return google.maps.MapTypeId[str.toUpperCase()];
+                    } else { // else, custom map-type
+                      return str;
+                    }
+                  });
+                }
+
+                if (key === "style") {
+                  var str = attr.charAt(0).toUpperCase() + attr.slice(1);
+                  var objName = str.replace(/Options$/,'')+"Style";
+                  options[key] = google.maps[objName][value];
+                } else if (key === "position") {
+                  options[key] = google.maps.ControlPosition[value];
+                } else {
+                  options[key] = value;
+                }
+              }
+            }
+            controlOptions[attr] = options;
+          } catch (e) {
+            void 0;
+          }
+        }
+      } // for
+
+      return controlOptions;
+    };
+
+    return {
+      filter: filter,
+      getOptions: getOptions,
+      getEvents: getEvents,
+      getControlOptions: getControlOptions,
+      toOptionValue: toOptionValue,
+      getAttrsToObserve: getAttrsToObserve,
+      orgAttributes: orgAttributes
+    }; // return
+
+  };
+  Attr2MapOptions.$inject= [
+    '$parse', '$timeout', '$log', '$interpolate', 'NavigatorGeolocation', 'GeoCoder',
+    'camelCaseFilter', 'jsonizeFilter', 'escapeRegexpFilter'
+  ];
+
+  angular.module('ngMap').service('Attr2MapOptions', Attr2MapOptions);
+})();
+
+/**
+ * @ngdoc service
+ * @name GeoCoder
+ * @description
+ *   Provides [defered/promise API](https://docs.angularjs.org/api/ng/service/$q)
+ *   service for Google Geocoder service
+ */
+(function() {
+  'use strict';
+  var $q;
+  /**
+   * @memberof GeoCoder
+   * @param {Hash} options
+   *   https://developers.google.com/maps/documentation/geocoding/#geocoding
+   * @example
+   * ```
+   *   GeoCoder.geocode({address: 'the cn tower'}).then(function(result) {
+   *     //... do something with result
+   *   });
+   * ```
+   * @returns {HttpPromise} Future object
+   */
+  var geocodeFunc = function(options) {
+    var deferred = $q.defer();
+    var geocoder = new google.maps.Geocoder();
+    geocoder.geocode(options, function (results, status) {
+      if (status == google.maps.GeocoderStatus.OK) {
+        deferred.resolve(results);
+      } else {
+        deferred.reject(status);
+      }
+    });
+    return deferred.promise;
+  };
+
+  var GeoCoder = function(_$q_) {
+    $q = _$q_;
+    return {
+      geocode : geocodeFunc
+    };
+  };
+  GeoCoder.$inject = ['$q'];
+
+  angular.module('ngMap').service('GeoCoder', GeoCoder);
+})();
+
+/**
+ * @ngdoc service
+ * @name GoogleMapsApi
+ * @description
+ *   Load Google Maps API Service
+ */
+(function() {
+  'use strict';
+  var $q;
+  var $timeout;
+
+  var GoogleMapsApi = function(_$q_, _$timeout_) {
+    $q = _$q_;
+    $timeout = _$timeout_;
+
+    return {
+
+      /**
+       * Load google maps into document by creating a script tag
+       * @memberof GoogleMapsApi
+       * @param {string} mapsUrl
+       * @example
+       *   GoogleMapsApi.load(myUrl).then(function() {
+       *     console.log('google map has been loaded')
+       *   });
+       */
+      load: function (mapsUrl) {
+
+        var deferred = $q.defer();
+
+        if (window.google === undefined || window.google.maps === undefined) {
+
+          window.lazyLoadCallback = function() {
+            $timeout(function() { /* give some time to load */
+              deferred.resolve(window.google)
+            }, 100);
+          };
+
+          var scriptEl = document.createElement('script');
+          scriptEl.src = mapsUrl +
+            (mapsUrl.indexOf('?') > -1 ? '&' : '?') +
+            'callback=lazyLoadCallback';
+
+          if (!document.querySelector('script[src="' + scriptEl.src + '"]')) {
+            document.body.appendChild(scriptEl);
+          }
+        } else {
+          deferred.resolve(window.google)
+        }
+
+        return deferred.promise;
+      }
+
+    }
+  }
+  GoogleMapsApi.$inject = ['$q', '$timeout'];
+
+  angular.module('ngMap').service('GoogleMapsApi', GoogleMapsApi);
+})();
+
+
+
+/**
+ * @ngdoc service
+ * @name NavigatorGeolocation
+ * @description
+ *  Provides [defered/promise API](https://docs.angularjs.org/api/ng/service/$q)
+ *  service for navigator.geolocation methods
+ */
+/* global google */
+(function() {
+  'use strict';
+  var $q;
+
+  /**
+   * @memberof NavigatorGeolocation
+   * @param {Object} geoLocationOptions the navigator geolocations options.
+   *  i.e. { maximumAge: 3000, timeout: 5000, enableHighAccuracy: true }.
+   *  If none specified, { timeout: 5000 }. 
+   *  If timeout not specified, timeout: 5000 added
+   * @param {function} success success callback function
+   * @param {function} failure failure callback function
+   * @example
+   * ```
+   *  NavigatorGeolocation.getCurrentPosition()
+   *    .then(function(position) {
+   *      var lat = position.coords.latitude, lng = position.coords.longitude;
+   *      .. do something lat and lng
+   *    });
+   * ```
+   * @returns {HttpPromise} Future object
+   */
+  var getCurrentPosition = function(geoLocationOptions) {
+    var deferred = $q.defer();
+    if (navigator.geolocation) {
+
+      if (geoLocationOptions === undefined) {
+        geoLocationOptions = { timeout: 5000 };
+      }
+      else if (geoLocationOptions.timeout === undefined) {
+        geoLocationOptions.timeout = 5000;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          deferred.resolve(position);
+        }, function(evt) {
+          void 0;
+          deferred.reject(evt);
+        },
+        geoLocationOptions
+      );
+    } else {
+      deferred.reject("Browser Geolocation service failed.");
+    }
+    return deferred.promise;
+  };
+
+  var NavigatorGeolocation = function(_$q_) {
+    $q = _$q_;
+    return {
+      getCurrentPosition: getCurrentPosition
+    };
+  };
+  NavigatorGeolocation.$inject = ['$q'];
+
+  angular.module('ngMap').
+    service('NavigatorGeolocation', NavigatorGeolocation);
+})();
+
+/**
+ * @ngdoc factory
+ * @name NgMapPool
+ * @description
+ *   Provide map instance to avoid memory leak
+ */
+(function() {
+  'use strict';
+  /**
+   * @memberof NgMapPool
+   * @desc map instance pool
+   */
+  var mapInstances = [];
+  var $window, $document, $timeout;
+
+  var add = function(el) {
+    var mapDiv = $document.createElement("div");
+    mapDiv.style.width = "100%";
+    mapDiv.style.height = "100%";
+    el.appendChild(mapDiv);
+    var map = new $window.google.maps.Map(mapDiv, {});
+    mapInstances.push(map);
+    return map;
+  };
+
+  var findById = function(el, id) {
+    var notInUseMap;
+    for (var i=0; i<mapInstances.length; i++) {
+      var map = mapInstances[i];
+      if (map.id == id && !map.inUse) {
+        var mapDiv = map.getDiv();
+        el.appendChild(mapDiv);
+        notInUseMap = map;
+        break;
+      }
+    }
+    return notInUseMap;
+  };
+
+  var findUnused = function(el) { //jshint ignore:line
+    var notInUseMap;
+    for (var i=0; i<mapInstances.length; i++) {
+      var map = mapInstances[i];
+      if (map.id) {
+        continue;
+      }
+      if (!map.inUse) {
+        var mapDiv = map.getDiv();
+        el.appendChild(mapDiv);
+        notInUseMap = map;
+        break;
+      }
+    }
+    return notInUseMap;
+  };
+
+  /**
+   * @memberof NgMapPool
+   * @function getMapInstance
+   * @param {HtmlElement} el map container element
+   * @return map instance for the given element
+   */
+  var getMapInstance = function(el) {
+    var map = findById(el, el.id) || findUnused(el);
+    if (!map) {
+      map = add(el);
+    } else {
+      /* firing map idle event, which is used by map controller */
+      $timeout(function() {
+        google.maps.event.trigger(map, 'idle');
+      }, 100);
+    }
+    map.inUse = true;
+    return map;
+  };
+
+  /**
+   * @memberof NgMapPool
+   * @function returnMapInstance
+   * @param {Map} an instance of google.maps.Map
+   * @desc sets the flag inUse of the given map instance to false, so that it 
+   * can be reused later
+   */
+  var returnMapInstance = function(map) {
+    map.inUse = false;
+  };
+  
+  /**
+   * @memberof NgMapPool
+   * @function resetMapInstances
+   * @desc resets mapInstance array
+   */
+  var resetMapInstances = function() {
+    for(var i = 0;i < mapInstances.length;i++) {
+        mapInstances[i] = null;
+    }
+    mapInstances = [];
+  };
+  
+  /**
+   * @memberof NgMapPool
+   * @function deleteMapInstance
+   * @desc delete a mapInstance
+   */
+  var deleteMapInstance= function(mapId) {
+	  for( var i=0; i<mapInstances.length; i++ ) {
+		  if( (mapInstances[i] !== null) && (mapInstances[i].id == mapId)) {
+			  mapInstances[i]= null;
+			  mapInstances.splice( i, 1 );
+		  }
+	  }
+  };
+
+  var NgMapPool = function(_$document_, _$window_, _$timeout_) {
+    $document = _$document_[0], $window = _$window_, $timeout = _$timeout_;
+
+    return {
+	  mapInstances: mapInstances,
+      resetMapInstances: resetMapInstances,
+      getMapInstance: getMapInstance,
+      returnMapInstance: returnMapInstance,
+      deleteMapInstance: deleteMapInstance
+    };
+  };
+
+  NgMapPool.$inject = [ '$document', '$window', '$timeout'];
+
+  angular.module('ngMap').factory('NgMapPool', NgMapPool);
+
+})();
+
+/**
+ * @ngdoc provider
+ * @name NgMap
+ * @description
+ *  common utility service for ng-map
+ */
+(function() {
+  'use strict';
+  var $window, $document, $q;
+  var NavigatorGeolocation, Attr2MapOptions, GeoCoder, camelCaseFilter, NgMapPool;
+
+  var mapControllers = {};
+
+  var getStyle = function(el, styleProp) {
+    var y;
+    if (el.currentStyle) {
+      y = el.currentStyle[styleProp];
+    } else if ($window.getComputedStyle) {
+      y = $document.defaultView.
+        getComputedStyle(el, null).
+        getPropertyValue(styleProp);
+    }
+    return y;
+  };
+
+  /**
+   * @memberof NgMap
+   * @function initMap
+   * @param id optional, id of the map. default 0
+   */
+  var initMap = function(id) {
+    var ctrl = mapControllers[id || 0];
+    if (!(ctrl.map instanceof google.maps.Map)) {
+      ctrl.initializeMap();
+      return ctrl.map;
+    } else {
+      void 0;
+    }
+  };
+
+  /**
+   * @memberof NgMap
+   * @function getMap
+   * @param {String} optional, id e.g., 'foo'
+   * @returns promise
+   */
+  var getMap = function(id, options) {
+    options = options || {};
+    id = typeof id === 'object' ? id.id : id;
+
+    var deferred = $q.defer();
+    var timeout = options.timeout || 10000;
+
+    function waitForMap(timeElapsed){
+      var keys = Object.keys(mapControllers);
+      var theFirstController = mapControllers[keys[0]];
+      if(id && mapControllers[id]){
+        deferred.resolve(mapControllers[id].map);
+      } else if (!id && theFirstController && theFirstController.map) {
+        deferred.resolve(theFirstController.map);
+      } else if (timeElapsed > timeout) {
+        deferred.reject('could not find map');
+      } else {
+        $window.setTimeout( function(){
+          waitForMap(timeElapsed+100);
+        }, 100);
+      }
+    }
+    waitForMap(0);
+
+    return deferred.promise;
+  };
+
+  /**
+   * @memberof NgMap
+   * @function addMap
+   * @param mapController {__MapContoller} a map controller
+   * @returns promise
+   */
+  var addMap = function(mapCtrl) {
+    if (mapCtrl.map) {
+      var len = Object.keys(mapControllers).length;
+      mapControllers[mapCtrl.map.id || len] = mapCtrl;
+    }
+  };
+
+  /**
+   * @memberof NgMap
+   * @function deleteMap
+   * @param mapController {__MapContoller} a map controller
+   */
+  var deleteMap = function(mapCtrl) {
+    var len = Object.keys(mapControllers).length - 1;
+    var mapId = mapCtrl.map.id || len;
+    if (mapCtrl.map) {
+      for (var eventName in mapCtrl.eventListeners) {
+        void 0;
+        var listener = mapCtrl.eventListeners[eventName];
+        google.maps.event.removeListener(listener);
+      }
+      if (mapCtrl.map.controls) {
+        mapCtrl.map.controls.forEach(function(ctrl) {
+          ctrl.clear();
+        });
+      }
+    }
+
+    //Remove Heatmap Layers
+    if (mapCtrl.map.heatmapLayers) {
+      Object.keys(mapCtrl.map.heatmapLayers).forEach(function (layer) {
+        mapCtrl.deleteObject('heatmapLayers', mapCtrl.map.heatmapLayers[layer]);
+      });
+    }
+
+    NgMapPool.deleteMapInstance(mapId);
+
+    delete mapControllers[mapId];
+  };
+
+  /**
+   * @memberof NgMap
+   * @function getGeoLocation
+   * @param {String} address
+   * @param {Hash} options geo options
+   * @returns promise
+   */
+  var getGeoLocation = function(string, options) {
+    var deferred = $q.defer();
+    if (!string || string.match(/^current/i)) { // current location
+      NavigatorGeolocation.getCurrentPosition(options).then(
+        function(position) {
+          var lat = position.coords.latitude;
+          var lng = position.coords.longitude;
+          var latLng = new google.maps.LatLng(lat,lng);
+          deferred.resolve(latLng);
+        },
+        function(error) {
+          deferred.reject(error);
+        }
+      );
+    } else {
+      GeoCoder.geocode({address: string}).then(
+        function(results) {
+          deferred.resolve(results[0].geometry.location);
+        },
+        function(error) {
+          deferred.reject(error);
+        }
+      );
+      // var geocoder = new google.maps.Geocoder();
+      // geocoder.geocode(options, function (results, status) {
+      //   if (status == google.maps.GeocoderStatus.OK) {
+      //     deferred.resolve(results);
+      //   } else {
+      //     deferred.reject(status);
+      //   }
+      // });
+    }
+
+    return deferred.promise;
+  };
+
+  /**
+   * @memberof NgMap
+   * @function observeAndSet
+   * @param {String} attrName attribute name
+   * @param {Object} object A Google maps object to be changed
+   * @returns attribue observe function
+   */
+  var observeAndSet = function(attrName, object) {
+    void 0;
+    return function(val) {
+      if (val) {
+        var setMethod = camelCaseFilter('set-'+attrName);
+        var optionValue = Attr2MapOptions.toOptionValue(val, {key: attrName});
+        if (object[setMethod]) { //if set method does exist
+          void 0;
+          /* if an location is being observed */
+          if (attrName.match(/center|position/) &&
+            typeof optionValue == 'string') {
+            getGeoLocation(optionValue).then(function(latlng) {
+              object[setMethod](latlng);
+            });
+          } else {
+            object[setMethod](optionValue);
+          }
+        }
+      }
+    };
+  };
+
+  /**
+   * @memberof NgMap
+   * @function setStyle
+   * @param {HtmlElement} map contriner element
+   * @desc set display, width, height of map container element
+   */
+  var setStyle = function(el) {
+    //if style is not given to the map element, set display and height
+    var defaultStyle = el.getAttribute('default-style');
+    if (defaultStyle == "true") {
+      el.style.display = 'block';
+      el.style.height = '300px';
+    } else {
+      if (getStyle(el, 'display') != "block") {
+        el.style.display = 'block';
+      }
+      if (getStyle(el, 'height').match(/^(0|auto)/)) {
+        el.style.height = '300px';
+      }
+    }
+  };
+
+  angular.module('ngMap').provider('NgMap', function() {
+    var defaultOptions = {};
+
+    /**
+     * @memberof NgMap
+     * @function setDefaultOptions
+     * @param {Hash} options
+     * @example
+     *  app.config(function(NgMapProvider) {
+     *    NgMapProvider.setDefaultOptions({
+     *      marker: {
+     *        optimized: false
+     *      }
+     *    });
+     *  });
+     */
+    this.setDefaultOptions = function(options) {
+      defaultOptions = options;
+    };
+
+    var NgMap = function(
+        _$window_, _$document_, _$q_,
+        _NavigatorGeolocation_, _Attr2MapOptions_,
+        _GeoCoder_, _camelCaseFilter_, _NgMapPool_
+      ) {
+      $window = _$window_;
+      $document = _$document_[0];
+      $q = _$q_;
+      NavigatorGeolocation = _NavigatorGeolocation_;
+      Attr2MapOptions = _Attr2MapOptions_;
+      GeoCoder = _GeoCoder_;
+      camelCaseFilter = _camelCaseFilter_;
+      NgMapPool = _NgMapPool_;
+
+      return {
+        defaultOptions: defaultOptions,
+        addMap: addMap,
+        deleteMap: deleteMap,
+        getMap: getMap,
+        initMap: initMap,
+        setStyle: setStyle,
+        getGeoLocation: getGeoLocation,
+        observeAndSet: observeAndSet
+      };
+    };
+    NgMap.$inject = [
+      '$window', '$document', '$q',
+      'NavigatorGeolocation', 'Attr2MapOptions',
+      'GeoCoder', 'camelCaseFilter', 'NgMapPool'
+    ];
+
+    this.$get = NgMap;
+  });
+})();
+
+/**
+ * @ngdoc service
+ * @name StreetView
+ * @description
+ *  Provides [defered/promise API](https://docs.angularjs.org/api/ng/service/$q)
+ *  service for [Google StreetViewService]
+ *  (https://developers.google.com/maps/documentation/javascript/streetview)
+ */
+(function() {
+  'use strict';
+  var $q;
+
+  /**
+   * Retrieves panorama id from the given map (and or position)
+   * @memberof StreetView
+   * @param {map} map Google map instance
+   * @param {LatLng} latlng Google LatLng instance
+   *   default: the center of the map
+   * @example
+   *   StreetView.getPanorama(map).then(function(panoId) {
+   *     $scope.panoId = panoId;
+   *   });
+   * @returns {HttpPromise} Future object
+   */
+  var getPanorama = function(map, latlng) {
+    latlng = latlng || map.getCenter();
+    var deferred = $q.defer();
+    var svs = new google.maps.StreetViewService();
+    svs.getPanoramaByLocation( (latlng||map.getCenter), 100,
+      function (data, status) {
+        // if streetView available
+        if (status === google.maps.StreetViewStatus.OK) {
+          deferred.resolve(data.location.pano);
+        } else {
+          // no street view available in this range, or some error occurred
+          deferred.resolve(false);
+          //deferred.reject('Geocoder failed due to: '+ status);
+        }
+      }
+    );
+    return deferred.promise;
+  };
+
+  /**
+   * Set panorama view on the given map with the panorama id
+   * @memberof StreetView
+   * @param {map} map Google map instance
+   * @param {String} panoId Panorama id fro getPanorama method
+   * @example
+   *   StreetView.setPanorama(map, panoId);
+   */
+  var setPanorama = function(map, panoId) {
+    var svp = new google.maps.StreetViewPanorama(
+      map.getDiv(), {enableCloseButton: true}
+    );
+    svp.setPano(panoId);
+  };
+
+  var StreetView = function(_$q_) {
+    $q = _$q_;
+
+    return {
+      getPanorama: getPanorama,
+      setPanorama: setPanorama
+    };
+  };
+  StreetView.$inject = ['$q'];
+
+  angular.module('ngMap').service('StreetView', StreetView);
+})();
+
+return 'ngMap';
+}));
+},{"angular":5}],7:[function(require,module,exports){
 'use strict';
 
 var _angular = require('angular');
@@ -40188,6 +42863,12 @@ var _app5 = require('./config/app.run');
 
 var _app6 = _interopRequireDefault(_app5);
 
+require('ngmap');
+
+var _angularToastr = require('angular-toastr');
+
+var _angularToastr2 = _interopRequireDefault(_angularToastr);
+
 require('angular-ui-router');
 
 require('./config/app.templates');
@@ -40200,24 +42881,30 @@ require('./home');
 
 require('./contact');
 
-require('./article');
-
 require('./services');
+
+require('./list');
 
 require('./auth');
 
 require('./settings');
 
-require('./editor');
+require('./profile');
 
-require('./list');
+require('./editor');
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 // Create and bootstrap application
 
+// import './article';
+
 // Import our app functionaity
-var requires = ['ui.router', 'templates', 'app.layout', 'app.components', 'app.home', 'app.contact', 'app.article', 'app.services', 'app.auth', 'app.settings', 'app.editor', 'app.list'];
+
+//import 'passport-facebook';
+var requires = ['ngMap', 'ui.router', 'templates', 'app.layout', 'app.components', 'app.home', 'app.contact', 'app.list',
+// 'app.article',
+'app.services', 'app.auth', 'app.settings', 'app.profile', 'app.editor', 'toastr'];
 
 // Mount on window for testing
 
@@ -40235,256 +42922,7 @@ _angular2.default.bootstrap(document, ['app'], {
   strictDi: true
 });
 
-},{"./article":10,"./auth":13,"./components":20,"./config/app.config":23,"./config/app.constants":24,"./config/app.run":25,"./config/app.templates":26,"./contact":30,"./editor":33,"./home":36,"./layout":39,"./list":40,"./services":48,"./settings":53,"angular":3,"angular-ui-router":1}],6:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var ArticleActionsCtrl = function () {
-  ArticleActionsCtrl.$inject = ["Articles", "User", "$state"];
-  function ArticleActionsCtrl(Articles, User, $state) {
-    'ngInject';
-
-    _classCallCheck(this, ArticleActionsCtrl);
-
-    this._Articles = Articles;
-    this._$state = $state;
-
-    if (User.current) {
-      //this.canModify = (User.current.username === this.article.author.username);
-      this.canModify = true;
-    } else {
-      this.canModify = false;
-    }
-  }
-
-  _createClass(ArticleActionsCtrl, [{
-    key: 'deleteArticle',
-    value: function deleteArticle() {
-      var _this = this;
-
-      this.isDeleting = true;
-      this._Articles.destroy(this.article.slug).then(function (success) {
-        return _this._$state.go('app.home');
-      }, function (err) {
-        return _this._$state.go('app.home');
-      });
-    }
-  }]);
-
-  return ArticleActionsCtrl;
-}();
-
-var ArticleActions = {
-  bindings: {
-    article: '='
-  },
-  controller: ArticleActionsCtrl,
-  templateUrl: 'article/article-actions.html'
-};
-
-exports.default = ArticleActions;
-
-},{}],7:[function(require,module,exports){
-'use strict';
-
-ArticleConfig.$inject = ["$stateProvider"];
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-function ArticleConfig($stateProvider) {
-  'ngInject';
-
-  $stateProvider.state('app.article', {
-    //url: '/article/:slug',
-    //https://conduit.productionready.io/api/articles/test1_yomogan-iozmks
-    url: '/articles/:slug',
-
-    controller: 'ArticleCtrl',
-    controllerAs: '$ctrl',
-    templateUrl: 'article/article.html',
-    title: 'Article',
-    resolve: {
-      article: ["Articles", "$state", "$stateParams", function article(Articles, $state, $stateParams) {
-        return Articles.get($stateParams.slug).then(function (article) {
-          return article;
-        }, function (err) {
-          return $state.go('app.home');
-        });
-      }]
-    }
-  });
-};
-
-exports.default = ArticleConfig;
-
-},{}],8:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
-
-var _marked = require('marked');
-
-var _marked2 = _interopRequireDefault(_marked);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var ArticleCtrl = function () {
-  ArticleCtrl.$inject = ["article", "User", "Comments", "$sce", "$rootScope"];
-  function ArticleCtrl(article, User, Comments, $sce, $rootScope) {
-    'ngInject';
-
-    var _this = this;
-
-    _classCallCheck(this, ArticleCtrl);
-
-    this.article = article;
-    this._Comments = Comments;
-    this.currentUser = User.current;
-
-    $rootScope.setPageTitle(this.article.title);
-
-    this.article.body = $sce.trustAsHtml((0, _marked2.default)(this.article.body, { sanitize: true }));
-
-    Comments.getAll(this.article.slug).then(function (comments) {
-      return _this.comments = comments;
-    });
-
-    this.resetCommentForm();
-  }
-
-  _createClass(ArticleCtrl, [{
-    key: 'resetCommentForm',
-    value: function resetCommentForm() {
-      this.commentForm = {
-        isSubmitting: false,
-        body: '',
-        errors: []
-      };
-    }
-  }, {
-    key: 'addComment',
-    value: function addComment() {
-      var _this2 = this;
-
-      this.commentForm.isSubmitting = true;
-      this._Comments.add(this.article.slug, this.commentForm.body).then(function (comment) {
-        _this2.comments.unshift(comment);
-        _this2.resetCommentForm();
-      }, function (err) {
-        _this2.commentForm.isSubmitting = false;
-        _this2.commentForm.errors = err.data.errors;
-      });
-    }
-  }, {
-    key: 'deleteComment',
-    value: function deleteComment(commentId, index) {
-      var _this3 = this;
-
-      this._Comments.destroy(commentId, this.article.slug).then(function (success) {
-        _this3.comments.splice(index, 1);
-      });
-    }
-  }]);
-
-  return ArticleCtrl;
-}();
-
-exports.default = ArticleCtrl;
-
-},{"marked":4}],9:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
-
-var CommentCtrl = function CommentCtrl(User) {
-  'ngInject';
-
-  _classCallCheck(this, CommentCtrl);
-
-  if (User.current) {
-    //this.canModify = (User.current.username === this.data.author.username);
-    this.canModify = true;
-  } else {
-    this.canModify = false;
-  }
-};
-CommentCtrl.$inject = ["User"];
-
-var Comment = {
-  bindings: {
-    data: '=',
-    deleteCb: '&'
-  },
-  controller: CommentCtrl,
-  templateUrl: 'article/comment.html'
-};
-
-exports.default = Comment;
-
-},{}],10:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-var _angular = require('angular');
-
-var _angular2 = _interopRequireDefault(_angular);
-
-var _article = require('./article.config');
-
-var _article2 = _interopRequireDefault(_article);
-
-var _article3 = require('./article.controller');
-
-var _article4 = _interopRequireDefault(_article3);
-
-var _articleActions = require('./article-actions.component');
-
-var _articleActions2 = _interopRequireDefault(_articleActions);
-
-var _comment = require('./comment.component');
-
-var _comment2 = _interopRequireDefault(_comment);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-// Create the module where our functionality can attach to
-var articleModule = _angular2.default.module('app.article', []);
-
-// Include our UI-Router config settings
-
-articleModule.config(_article2.default);
-
-// Controllers
-
-articleModule.controller('ArticleCtrl', _article4.default);
-
-articleModule.component('articleActions', _articleActions2.default);
-
-articleModule.component('comment', _comment2.default);
-
-exports.default = articleModule;
-
-},{"./article-actions.component":6,"./article.config":7,"./article.controller":8,"./comment.component":9,"angular":3}],11:[function(require,module,exports){
+},{"./auth":10,"./components":17,"./config/app.config":20,"./config/app.constants":21,"./config/app.run":22,"./config/app.templates":23,"./contact":27,"./editor":30,"./home":33,"./layout":36,"./list":37,"./profile":41,"./services":49,"./settings":54,"angular":5,"angular-toastr":2,"angular-ui-router":3,"ngmap":6}],8:[function(require,module,exports){
 'use strict';
 
 AuthConfig.$inject = ["$stateProvider", "$httpProvider"];
@@ -40514,12 +42952,21 @@ function AuthConfig($stateProvider, $httpProvider) {
         return User.ensureAuthIs(false);
       }]
     }
+  }).state('app.facebook', {
+    url: '/register',
+    controller: 'AuthCtrl as $ctrl',
+    title: 'Sign up',
+    resolve: {
+      auth: ["User", function auth(User) {
+        return User.ensureAuthIs(false);
+      }]
+    }
   });
 };
 
 exports.default = AuthConfig;
 
-},{}],12:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40531,17 +42978,18 @@ var _createClass = function () { function defineProperties(target, props) { for 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var AuthCtrl = function () {
-  AuthCtrl.$inject = ["User", "$state"];
-  function AuthCtrl(User, $state) {
+  AuthCtrl.$inject = ["User", "$state", "toastr"];
+  function AuthCtrl(User, $state, toastr) {
     'ngInject';
 
     _classCallCheck(this, AuthCtrl);
 
     this._User = User;
-    this._$state = $state;
 
     this.title = $state.current.title;
     this.authType = $state.current.name.replace('app.', '');
+    this._$state = $state;
+    this._toastr = toastr;
   }
 
   _createClass(AuthCtrl, [{
@@ -40552,8 +43000,14 @@ var AuthCtrl = function () {
       this.isSubmitting = true;
 
       this._User.attemptAuth(this.authType, this.formData).then(function (res) {
+        setTimeout(function () {
+          _this._toastr.success('Sucuenta se ha creado correctemente.', 'Bienvenido');
+        }, 800);
         _this._$state.go('app.home');
       }, function (err) {
+        setTimeout(function () {
+          _this._toastr.error('Ha habido un error, ponjanse en contacto con el administrador de la web.', 'activación');
+        }, 800);
         _this.isSubmitting = false;
         _this.errors = err.data.errors;
       });
@@ -40565,7 +43019,7 @@ var AuthCtrl = function () {
 
 exports.default = AuthCtrl;
 
-},{}],13:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40599,7 +43053,7 @@ authModule.controller('AuthCtrl', _auth4.default);
 
 exports.default = authModule;
 
-},{"./auth.config":11,"./auth.controller":12,"angular":3}],14:[function(require,module,exports){
+},{"./auth.config":8,"./auth.controller":9,"angular":5}],11:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40720,7 +43174,7 @@ var ArticleList = {
 
 exports.default = ArticleList;
 
-},{}],15:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40736,7 +43190,7 @@ var ArticleMeta = {
 
 exports.default = ArticleMeta;
 
-},{}],16:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40751,7 +43205,7 @@ var ArticlePreview = {
 
 exports.default = ArticlePreview;
 
-},{}],17:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40802,7 +43256,7 @@ var ListPagination = {
 
 exports.default = ListPagination;
 
-},{}],18:[function(require,module,exports){
+},{}],15:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40867,7 +43321,7 @@ var FavoriteBtn = {
 
 exports.default = FavoriteBtn;
 
-},{}],19:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40931,7 +43385,7 @@ var FollowBtn = {
 
 exports.default = FollowBtn;
 
-},{}],20:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -40996,7 +43450,7 @@ componentsModule.component('listPagination', _listPagination2.default);
 
 exports.default = componentsModule;
 
-},{"./article-helpers/article-list.component":14,"./article-helpers/article-meta.component":15,"./article-helpers/article-preview.component":16,"./article-helpers/list-pagination.component":17,"./buttons/favorite-btn.component":18,"./buttons/follow-btn.component":19,"./list-errors.component":21,"./show-authed.directive":22,"angular":3}],21:[function(require,module,exports){
+},{"./article-helpers/article-list.component":11,"./article-helpers/article-meta.component":12,"./article-helpers/article-preview.component":13,"./article-helpers/list-pagination.component":14,"./buttons/favorite-btn.component":15,"./buttons/follow-btn.component":16,"./list-errors.component":18,"./show-authed.directive":19,"angular":5}],18:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41011,7 +43465,7 @@ var ListErrors = {
 
 exports.default = ListErrors;
 
-},{}],22:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 'use strict';
 
 ShowAuthed.$inject = ["User"];
@@ -41048,7 +43502,7 @@ function ShowAuthed(User) {
 
 exports.default = ShowAuthed;
 
-},{}],23:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 'use strict';
 
 AppConfig.$inject = ["$httpProvider", "$stateProvider", "$locationProvider", "$urlRouterProvider"];
@@ -41085,7 +43539,7 @@ function AppConfig($httpProvider, $stateProvider, $locationProvider, $urlRouterP
 
 exports.default = AppConfig;
 
-},{"./auth.interceptor":27}],24:[function(require,module,exports){
+},{"./auth.interceptor":24}],21:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41103,7 +43557,7 @@ var AppConstants = {
 
 exports.default = AppConstants;
 
-},{}],25:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 'use strict';
 
 AppRun.$inject = ["AppConstants", "$rootScope"];
@@ -41132,26 +43586,23 @@ function AppRun(AppConstants, $rootScope) {
 
 exports.default = AppRun;
 
-},{}],26:[function(require,module,exports){
+},{}],23:[function(require,module,exports){
 "use strict";
 
 angular.module("templates", []).run(["$templateCache", function ($templateCache) {
-  $templateCache.put("article/article-actions.html", "<article-meta article=\"$ctrl.article\">\n\n  <span ng-show=\"$ctrl.canModify\">\n    <a class=\"btn btn-sm btn-outline-secondary\"\n      ui-sref=\"app.editor({ slug: $ctrl.article.slug })\">\n      <i class=\"ion-edit\"></i> Edit Article\n    </a>\n\n    <button class=\"btn btn-sm btn-outline-danger\"\n      ng-class=\"{disabled: $ctrl.isDeleting}\"\n      ng-click=\"$ctrl.deleteArticle()\">\n      <i class=\"ion-trash-a\"></i> Delete Article\n    </button>\n  </span>\n\n  <span ng-hide=\"$ctrl.canModify\">\n    <follow-btn user=\"$ctrl.article.author\"></follow-btn>\n    <favorite-btn article=\"$ctrl.article\">\n      {{ $ctrl.article.favorited ? \'Unfavorite\' : \'Favorite\' }} Article <span class=\"counter\">({{$ctrl.article.favoritesCount}})</span>\n    </favorite-btn>\n  </span>\n\n</article-meta>\n");
-  $templateCache.put("article/article.html", "<div class=\"article-page\">\n\n  <!-- Banner for article title, action buttons -->\n  <div class=\"banner\">\n    <div class=\"container\">\n\n      <h1 ng-bind=\"::$ctrl.article.title\"></h1>\n\n      <div class=\"article-meta\">\n        <!-- Show author info + favorite & follow buttons -->\n        <article-actions article=\"$ctrl.article\"></article-actions>\n\n      </div>\n\n    </div>\n  </div>\n\n\n\n  <!-- Main view. Contains article html and comments -->\n  <div class=\"container page\">\n\n    <!-- Article\'s HTML & tags rendered here -->\n    <div class=\"row article-content\">\n      <div class=\"col-xs-12\">\n\n        <div ng-bind-html=\"::$ctrl.article.body\"></div>\n\n        <ul class=\"tag-list\">\n          <li class=\"tag-default tag-pill tag-outline\"\n            ng-repeat=\"tag in ::$ctrl.article.tagList\">\n            {{ tag }}\n          </li>\n        </ul>\n\n      </div>\n    </div>\n\n    <hr />\n\n    <div class=\"article-actions\">\n\n      <!-- Show author info + favorite & follow buttons -->\n      <article-actions article=\"$ctrl.article\"></article-actions>\n\n    </div>\n\n    <!-- Comments section -->\n    <div class=\"row\">\n      <div class=\"col-xs-12 col-md-8 offset-md-2\">\n\n        <div show-authed=\"true\">\n          <list-errors from=\"$crl.commentForm.errors\"></list-errors>\n          <form class=\"card comment-form\" ng-submit=\"$ctrl.addComment()\">\n            <fieldset ng-disabled=\"$ctrl.commentForm.isSubmitting\">\n              <div class=\"card-block\">\n                <textarea class=\"form-control\"\n                  placeholder=\"Write a comment...\"\n                  rows=\"3\"\n                  ng-model=\"$ctrl.commentForm.body\"></textarea>\n              </div>\n              <div class=\"card-footer\">\n                <img ng-src=\"{{::$ctrl.currentUser.image}}\" class=\"comment-author-img\" />\n                <button class=\"btn btn-sm btn-primary\" type=\"submit\">\n                 Post Comment\n                </button>\n              </div>\n            </fieldset>\n          </form>\n        </div>\n\n        <div show-authed=\"false\">\n          <a ui-sref=\"app.login\">Sign in</a> or <a ui-sref=\"app.register\">sign up</a> to add comments on this article.\n        </div>\n\n        <comment ng-repeat=\"cmt in $ctrl.comments\"\n          data=\"cmt\"\n          delete-cb=\"$ctrl.deleteComment(cmt.id, $index)\">\n        </comment>\n\n\n      </div>\n    </div>\n\n  </div>\n\n\n\n</div>\n");
-  $templateCache.put("article/comment.html", "<div class=\"card\">\n  <div class=\"card-block\">\n    <p class=\"card-text\" ng-bind=\"::$ctrl.data.body\"></p>\n  </div>\n  <div class=\"card-footer\">\n    <a class=\"comment-author\" ui-sref=\"app.profile.main({ username: $ctrl.data.author.username })\">\n      <img ng-src=\"{{::$ctrl.data.author.image}}\" class=\"comment-author-img\" />\n    </a>\n    &nbsp;\n    <a class=\"comment-author\" ui-sref=\"app.profile.main({ username: $ctrl.data.author.username })\" ng-bind=\"::$ctrl.data.author.username\">\n    </a>\n    <span class=\"date-posted\"\n      ng-bind=\"::$ctrl.data.createdAt | date: \'longDate\'\">\n    </span>\n    <span class=\"mod-options\" ng-show=\"$ctrl.canModify\">\n      <i class=\"ion-trash-a\" ng-click=\"$ctrl.deleteCb()\"></i>\n    </span>\n  </div>\n</div>\n");
-  $templateCache.put("auth/auth.html", "<div class=\"auth-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n        <h1 class=\"text-xs-center\" ng-bind=\"::$ctrl.title\"></h1>\n        <p class=\"text-xs-center\">\n          <a ui-sref=\"app.login\"\n            ng-show=\"$ctrl.authType === \'register\'\">\n            Have an account?\n          </a>\n          <a ui-sref=\"app.register\"\n            ng-show=\"$ctrl.authType === \'login\'\">\n            Need an account?\n          </a>\n        </p>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\" ng-show=\"$ctrl.authType === \'register\'\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\"\n              ng-bind=\"::$ctrl.title\">\n            </button>\n\n          </fieldset>\n        </form>\n      </div>\n\n    </div>\n  </div>\n</div>\n");
+  $templateCache.put("auth/auth.html", "<div class=\"auth-page\">\n  <div class=\"container page\">\n    <div class=\"row\" style=\"text-align:center!important;\">\n\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n        <h1 class=\"text-xs-center\" ng-bind=\"::$ctrl.title\"></h1>\n        <p class=\"text-xs-center\">\n          <a ui-sref=\"app.login\"\n            ng-show=\"$ctrl.authType === \'register\'\">\n            Have an account?\n          </a>\n          <a ui-sref=\"app.register\"\n            ng-show=\"$ctrl.authType === \'login\'\">\n            Need an account?\n          </a>\n        </p>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"control-group\" ng-show=\"$ctrl.authType === \'register\'\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"control-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"control-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\"\n              ng-bind=\"::$ctrl.title\">\n            </button>\n            <a target=\"_self\" href=\"http://localhost:8080/api/facebook\">Facebook</a>\n          </fieldset>\n        </form>\n      </div>\n    <li class=\"nav-item\">\n      <a ui-sref-active=\"active\" ui-sref=\"app.register\" style=\"color:red!important;\">Twitter</a>\n  </li>\n    </div>\n  </div>\n</div>\n");
   $templateCache.put("components/list-errors.html", "<ul class=\"error-messages\" ng-show=\"$ctrl.errors\">\n  <div ng-repeat=\"(field, errors) in $ctrl.errors\">\n    <li ng-repeat=\"error in errors\">\n      {{field}} {{error}}\n    </li>\n  </div>\n</ul>\n");
-  $templateCache.put("contact/contact.html", "<br><br>\n<script src=\"frontend/modules/contact/view/lib/bootstrap-button.js\"></script>\n<div class=\"container\">\n    <form id=\"contact_form\" name=\"contact_form\" class=\"form-contact\">\n        <br>\n        <h2 class=\"form-contact-heading\">Contacto</h2>\n\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputName\" type=\"text\" id=\"inputName\" name=\"inputName\" placeholder=\"Nombre\" class=\"input-block-level\" dir=\"auto\" maxlength=\"100\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputName.$error.required && (contact_form.inputName.$dirty || contact_form.inputName.$touched)\">El campo es obligatorio</span>\n        </div>\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputEmail\" type=\"email\" id=\"inputEmail\" name=\"inputEmail\" placeholder=\"Email *\" class=\"input-block-level\" maxlength=\"100\" ng-pattern=\"/^[a-z0-9!#$%&\'*+/=?^_`{|}~.-]+@[a-z0-9-]+(\\.[a-z0-9-]+)*$/i\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.required && (contact_form.inputEmail.$dirty || contact_form.inputEmail.$touched)\">El campo es obligatorio</span>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.email\">Email no valido</span>\n        </div>\n        <div class=\"control-group\">\n            <label class=\"cmbConsulta\" for=\"sel1\">Tema de Consulta</label>\n            <select ng-model=\"scope.inputSubject\" class=\"form-control\" id=\"inputSubject\" name=\"inputSubject\" title=\"Choose subject\">\n                <option value=\"\">- Por favor, seleccione un tema de consulta -</option>\n                <option value=\"actividad\">Info relativa a alguna actividad</option>\n                <option value=\"dpto\">Contacta con nuestro dpto de actividades</option>\n                <option value=\"trabaja\">Trabaja con nosotros</option>\n                <option value=\"sugerencias\">Haznos sugerencias</option>\n                <option value=\"reclamaciones\">Atendemos tus reclamaciones</option>\n                <option value=\"novedades\">Te avisamos de nuestras novedades</option>\n                <option value=\"diferente\">Algo diferente</option>\n            </select>\n        </div>\n        <div class=\"control-group\">\n            <textarea required ng-model=\"scope.inputMessage\" class=\"input-block-level\" rows=\"4\" id=\"inputMessage\" name=\"inputMessage\" placeholder=\"Introduzca aqui su mensaje *\" style=\"max-width: 100%;\" dir=\"auto\"></textarea>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputMessage.$error.required && (contact_form.inputMessage.$dirty || contact_form.inputMessage.$touched)\">El campo es obligatorio</span>\n        </div>\n\n        <input type=\"hidden\" name=\"token\" value=\"contact_form\" />\n        \n        <input class=\"btn btn-primary\" type=\"submit\" name=\"submit\" id=\"submitBtn\" value=\"Enviar\" \n        ng-show=\"contact_form.inputName.$valid && contact_form.inputEmail.$valid && contact_form.inputMessage.$valid\" \n        ng-click=\"scope.SubmitContact()\"/>\n\n        \n        <div id=\"resultMessage\" ng-class=\"class\">{{message}}</div>\n    </form>\n</div> ");
+  $templateCache.put("contact/contact.html", "<br><br>\n<script src=\"js/contact/bootstrap-button.js\"></script>\n<!-- <script src=\"frontend//bootstrap-button.js\"></script> -->\n<div class=\"container\">\n    <form id=\"contact_form\" name=\"contact_form\" class=\"form-contact\">\n        <br>\n        <h2 class=\"form-contact-heading\">Contacto</h2>\n\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputName\" type=\"text\" id=\"inputName\" name=\"inputName\" placeholder=\"Nombre\" class=\"input-block-level\" dir=\"auto\" maxlength=\"100\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputName.$error.required && (contact_form.inputName.$dirty || contact_form.inputName.$touched)\">El campo es obligatorio</span>\n        </div>\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputEmail\" type=\"email\" id=\"inputEmail\" name=\"inputEmail\" placeholder=\"Email *\" class=\"input-block-level\" maxlength=\"100\" ng-pattern=\"/^[a-z0-9!#$%&\'*+/=?^_`{|}~.-]+@[a-z0-9-]+(\\.[a-z0-9-]+)*$/i\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.required && (contact_form.inputEmail.$dirty || contact_form.inputEmail.$touched)\">El campo es obligatorio</span>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.email\">Email no valido</span>\n        </div>\n        <div class=\"control-group\">\n            <label class=\"cmbConsulta\" for=\"sel1\">Tema de Consulta</label>\n            <select ng-model=\"scope.inputSubject\" class=\"form-control\" id=\"inputSubject\" name=\"inputSubject\" title=\"Choose subject\">\n                <option value=\"\">- Por favor, seleccione un tema de consulta -</option>\n                <option value=\"actividad\">Info relativa a alguna actividad</option>\n                <option value=\"dpto\">Contacta con nuestro dpto de actividades</option>\n                <option value=\"trabaja\">Trabaja con nosotros</option>\n                <option value=\"sugerencias\">Haznos sugerencias</option>\n                <option value=\"reclamaciones\">Atendemos tus reclamaciones</option>\n                <option value=\"novedades\">Te avisamos de nuestras novedades</option>\n                <option value=\"diferente\">Algo diferente</option>\n            </select>\n        </div>\n        <div class=\"control-group\">\n            <textarea required ng-model=\"scope.inputMessage\" class=\"input-block-level\" rows=\"4\" id=\"inputMessage\" name=\"inputMessage\" placeholder=\"Introduzca aqui su mensaje *\" style=\"max-width: 100%;\" dir=\"auto\"></textarea>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputMessage.$error.required && (contact_form.inputMessage.$dirty || contact_form.inputMessage.$touched)\">El campo es obligatorio</span>\n        </div>\n\n        <input type=\"hidden\" name=\"token\" value=\"contact_form\" />\n        \n        <input class=\"btn btn-primary\" type=\"submit\" name=\"submit\" id=\"submitBtn\" value=\"Enviar\" \n        ng-show=\"contact_form.inputName.$valid && contact_form.inputEmail.$valid && contact_form.inputMessage.$valid\" \n        ng-click=\"scope.SubmitContact()\"/>\n\n        \n        <div id=\"resultMessage\" ng-class=\"class\">{{message}}</div>\n    </form>\n</div> ");
   $templateCache.put("editor/editor.html", "<div class=\"editor-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n      <div class=\"col-md-10 offset-md-1 col-xs-12\">\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form>\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                ng-model=\"$ctrl.article.title\"\n                type=\"text\"\n                placeholder=\"Article Title\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                ng-model=\"$ctrl.article.description\"\n                type=\"text\"\n                placeholder=\"What\'s this article about?\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <textarea class=\"form-control\"\n                rows=\"8\"\n                ng-model=\"$ctrl.article.body\"\n                placeholder=\"Write your article (in markdown)\">\n              </textarea>\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                type=\"text\"\n                placeholder=\"Enter tags\"\n                ng-model=\"$ctrl.tagField\"\n                ng-keyup=\"$event.keyCode == 13 && $ctrl.addTag()\" />\n\n              <div class=\"tag-list\">\n                <span ng-repeat=\"tag in $ctrl.article.tagList\"\n                  class=\"tag-default tag-pill\">\n                  <i class=\"ion-close-round\" ng-click=\"$ctrl.removeTag(tag)\"></i>\n                  {{ tag }}\n                </span>\n              </div>\n            </fieldset>\n\n            <button class=\"btn btn-lg pull-xs-right btn-primary\" type=\"button\" ng-click=\"$ctrl.submit()\">\n              Publish Article\n            </button>\n\n          </fieldset>\n        </form>\n\n      </div>\n    </div>\n  </div>\n</div>\n");
-  $templateCache.put("home/home.html", "<!-- Banner -->\n<section id=\"banner\">\n	<div class=\"inner\">\n		<h2>Spectral</h2>\n		<ul class=\"actions\">\n			<li><a href=\"#/\" class=\"button special\">Activate</a></li>\n		</ul>\n	</div>\n	<a href=\"#products\" class=\"more scrolly\">Componentes</a>\n</section>\n\n<!-- One -->\n<section id=\"one\" class=\"wrapper style1 special\">\n	<div class=\"inner\">\n		<input type=\"text\" name=\"\" ng-model=\"keywords\" id=\"\" placeholder=\"Search your favorite products\">\n		<input type=\"button\" class=\"button fit\" ng-click=\"search()\" value=\"Search\">\n	</div>\n</section>\n\n<!-- Three -->\n<section id=\"three\" class=\"wrapper style3 special\">\n	<div class=\"inner\">\n		<h1>Categorias</h1>\n		<ul class=\"features\">\n			<li><a href=\"#/oferta/procesador\" >\n				<h1>Procesadores</h1>\n			</a></li>\n			<li><a href=\"#/oferta/placaBase\">\n				<h1>Placas Base</h1>\n			</a></li>\n			<li><a href=\"#/oferta/discoDuro\">\n				<h1>Discos Duros</h1>\n			</a></li>\n			<li><a href=\"#/oferta/tarjetaGrafica\">\n				<h1>Gráficas</h1>\n			</a></li>\n			<li><a href=\"#/oferta/ram\">\n				<h1>Memoria RAM</h1>\n			</a></li>\n			<li><a href=\"#/oferta/grabadora\">\n				<h1>Grabadoras</h1>\n			</a></li>\n			<li><a href=\"#/oferta/disquetera\">\n				<h1>Disqueteras</h1>\n			</a></li>\n			<li><a href=\"#/oferta/multilector\">\n				<h1>Multilectores</h1>\n			</a></li>\n			<li><a href=\"#/oferta/tarjetaSonido\">\n				<h1>Sonido</h1>\n			</a></li>\n			<li><a href=\"#/oferta/torre\">\n				<h1>Torres</h1>\n			</a></li>\n			<li><a href=\"#/oferta/ventilacion\">\n				<h1>Ventilación</h1>\n			</a></li>\n			<li><a href=\"#/oferta/fuenteAlimentacion\">\n				<h1>Fuentes</h1>\n			</a></li>\n		</ul>\n	</div>\n</section>\n\n\n\n<!-- Two -->\n<section id=\"two\" class=\"wrapper alt style2\">\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Magna primis lobortis<br />\n			sed ullamcorper</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Tortor dolore feugiat<br />\n			elementum magna</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Augue eleifend aliquet<br />\n			sed condimentum</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n</section>\n\n\n\n<!-- CTA -->\n<section id=\"cta\" class=\"wrapper style4\">\n	<div class=\"inner\">\n		<header>\n			<h2>Arcue ut vel commodo</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum endrerit imperdiet amet eleifend fringilla.</p>\n		</header>\n		<ul class=\"actions vertical\">\n			<li><a href=\"#\" class=\"button fit special\">Activate</a></li>\n			<li><a href=\"#\" class=\"button fit\">Learn More</a></li>\n		</ul>\n	</div>\n</section>");
+  $templateCache.put("home/home.html", "<!-- Banner -->\n<section id=\"banner\">\n	<div class=\"inner\">\n		<h2>Spectral</h2>\n		<ul class=\"actions\">\n			<li><a href=\"#/\" class=\"button special\">Activate</a></li>\n		</ul>\n	</div>\n	<a href=\"#products\" class=\"more scrolly\">Componentes</a>\n</section>\n\n<!-- One -->\n<section id=\"one\" class=\"wrapper style1 special\">\n	<div class=\"inner\">\n		<input type=\"text\" name=\"\" ng-model=\"keywords\" id=\"\" placeholder=\"Search your favorite products\">\n		<input type=\"button\" class=\"button fit\" ng-click=\"search()\" value=\"Search\">\n	</div>\n</section>\n\n<!-- Three -->\n<section id=\"three\" class=\"wrapper style3 special\">\n	<div class=\"inner\">\n		<h1>Categorias</h1>\n		<ul class=\"features\">\n			<li><a ui-sref=\"app.list({type:\'processadores\'})\">\n				<h1>Procesadores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'PlacaBase\'})\">\n				<h1>Placas Base</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'discdur\'})\">\n				<h1>Discos Duros</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'tarjetaGrafica\'})\">\n				<h1>Gráficas</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ram\'})\">\n				<h1>Memoria RAM</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'Teclado\'})\">\n				<h1>Teclado</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'disquetera\'})\">\n				<h1>Disqueteras</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'multilectores\'})\">\n				<h1>Multilectores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'sonido\'})\">\n				<h1>Sonido</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'torres\'})\">\n				<h1>Torres</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ventilacion\'})\">\n				<h1>Ventilación</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'fuentes\'})\">\n				<h1>Fuentes</h1>\n			</a></li>\n		</ul>\n	</div>\n</section>\n\n\n\n<!-- Two -->\n<section id=\"two\" class=\"wrapper alt style2\">\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Magna primis lobortis<br />\n			sed ullamcorper</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Tortor dolore feugiat<br />\n			elementum magna</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Augue eleifend aliquet<br />\n			sed condimentum</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n</section>\n\n\n\n<!-- CTA -->\n<section id=\"cta\" class=\"wrapper style4\">\n	<div class=\"inner\">\n		<header>\n			<h2>Arcue ut vel commodo</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum endrerit imperdiet amet eleifend fringilla.</p>\n		</header>\n		<ul class=\"actions vertical\">\n			<li><a href=\"#\" class=\"button fit special\">Activate</a></li>\n			<li><a href=\"#\" class=\"button fit\">Learn More</a></li>\n		</ul>\n	</div>\n</section>");
   $templateCache.put("layout/app-view.html", "<app-header></app-header>\n\n<div ui-view></div>\n\n<app-footer></app-footer>\n");
   $templateCache.put("layout/footer.html", "<div>\n  <footer id=\"footer\">\n      <ul class=\"icons\">\n          <li><a href=\"#/\" class=\"icon fa-twitter\"><span class=\"label\">Twitter</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-facebook\"><span class=\"label\">Facebook</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-instagram\"><span class=\"label\">Instagram</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-dribbble\"><span class=\"label\">Dribbble</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-envelope-o\"><span class=\"label\">Email</span></a></li>\n      </ul>\n      <ul class=\"copyright\">\n          <li>&copy; Untitled</li><li>Design: <a href=\"http://html5up.net\">HTML5 UP</a></li>\n      </ul>\n  </footer>\n</div>");
-  $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a href=\"index.html\">Spectral</a></h1>\n          <nav id=\"nav\">\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.contact\" class=\"menuToggle\"><span>Contact</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"menuToggle\"><span>Home</span></a>\n                  <a  ui-sref-active=\"active\" ui-sref=\"app.list\" class=\"menuToggle\"><span>Ofertas</span></a>\n                  <a href=\'#/ofertas\' ng-show=\"misofertasV\">Mis ofertas</a>\n                      <a href=\'#/admin\' ng-show=\"adminV\">Administrar</a>\n                  <!-- LogProf -->\n                      <a id=\"acceder\" ng-show=\"accederV\" href=\"#/\" class=\"button special\" ng-click=\"open()\"  >Acceder</a>\n                      <a id=\'profile\' ng-show=\"profileV\" href=\'#/user/profile\'><img ng-show=\"profileV\" id=\'menuImg\' class=\'icon rounded\' src=\'{{avatar}}\'/>{{nombre}}</a>\n                      <a id=\'logout\' ng-show=\"logoutV\" ng-click=\'logout()\' >Log Out</a> -->\n          </nav>\n      </header>\n  </div> \n\n ");
-  $templateCache.put("list/list.details.html", "<div class=\"home-page\" >\n    <div ng-repeat=\"c in scope.computer\">\n      <div class=\"contentof\">\n          <div class=\"imageof\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n          <div class=\"nombre\">{{c.name}}</div>\n          <div class=\"nombre\">{{c.date}}</div>\n          <div class=\"nombre\">{{c.marca}}</div>\n          <div class=\"nombre\">{{c.status}}</div>\n          <div class=\"nombre\">{{c.type}}</div>\n  </div>\n    \n    </div>");
-  $templateCache.put("list/list.html", "<div class=\"home-page\" >\n  <div class=\"ofertas\"></div>\n  <div ng-repeat=\"c in scope.computer\">\n    <div class=\"tarjeta\">\n        <div class=\"imagen\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n        <div class=\"nombre\">{{c.name}}</div>\n        <div>{{c._id}}</div>\n        <a  ui-sref-active=\"active\" ui-sref=\"app.details({ id: c._id})\" class=\"menuToggle\"><span>Details</span></a>        \n    </div>\n</div>\n  \n  </div>\n  ");
+  $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a ui-sref=\"app.home\">Spectral</a></h1>\n          <nav id=\"nav\" > \n            <ul show-authed=\"false\" class=\"nav navbar-nav pull-xs-right\">\n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.contact\"><span>Contact</span></a>\n                </li>      \n           \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.home\" ><span>Home</span></a>\n                </li>\n                  \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.list\"><span>Ofertas</span></a>\n                </li>\n                \n                <li class=\"nav-item\">\n                    <a ui-sref-active=\"active\" ui-sref=\"app.register\" style=\"color:red!important;\">Sign Up</a>\n                </li>\n\n                <li class=\"nav-item\">\n                    <a ui-sref-active=\"active\" ui-sref=\"app.login\" style=\"color:red!important;\">Log in</a>\n                </li>\n            </ul>\n               \n            <ul show-authed=\"true\" class=\"nav navbar-nav pull-xs-right\">\n            \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.contact\"><span>Contact</span></a>\n                </li>   \n\n                <li class=\"nav-item\">\n                    <a class=\"nav-link\" ui-sref-active=\"active\" ui-sref=\"app.home\"> Home</a>\n                </li>\n\n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.list\"><span>Ofertas</span></a>\n                 </li>\n\n                <li class=\"nav-item\">\n                    <a class=\"nav-link\" ui-sref-active=\"active\" ui-sref=\"app.profile.main({ username: $ctrl.currentUser.username})\">\n                        <img ng-src=\"{{$ctrl.currentUser.image}}\" class=\"user-pic\" />\n                        {{ $ctrl.currentUser.username }}\n                    </a>\n                </li>\n                <li class=\"nav-item\">\n                        <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"btn btn-outline-danger\" ng-click=\"$ctrl.logout()\">\n                                <span>Log Out</span>\n                        </a>\n                    </li>\n            </ul>       \n          </nav>\n      </header>\n  </div> \n\n ");
+  $templateCache.put("list/list.details.html", "<div class=\"details-page\" >\n    <div ng-repeat=\"c in scope.computer\">\n      <div class=\"contentof\">\n          <div class=\"imageof\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n          <div class=\"nombre\">{{c.name}}</div>\n          <div class=\"nombre\">{{c.date}}</div>\n          <div class=\"nombre\">{{c.marca}}</div>\n          <div class=\"nombre\">{{c.status}}</div>\n          <div class=\"nombre\">{{c.type}}</div>\n            <div style=\"max-width:50%; max-height:50%;\" map-lazy-load=\"https://maps.google.com/maps/api/js\">\n              <ng-map default-style=\"true\"  zoom=\"7\" center=\"[38.3821778, -0.577064]\"> \n                    <marker ng-repeat=\"a in c.shop\"\n                    position=\"[{{a.latitude}}, {{a.longitude}}]\"\n                    data=\"{{data[$index]}}\"\n                    on-click=\"map.showInfoWindow(event, \'infow{{a.name}}{{$index}}\')\";\n                    title=\"pos: {{a.latitude}}, {{a.longitude}}\"></marker>\n                    <info-window id=\"infow{{a.name}}{{$index}}\" ng-repeat=\"a in c.shop\">\n                      <div style=\"color:black\" >\n                        Name: {{a.name}}<br/>\n                        <!-- latitude; {{a.latitude}}<br>\n                        longitude: {{a.longitude}}<br> -->\n                        Stock: {{a.stock}} Unidades\n                      </div>\n                    </info-window>\n              </ng-map>\n            </div>\n     </div>\n  </div>\n</div>");
+  $templateCache.put("list/list.html", "<div class=\"list-page\" >\n  <div  style=\"padding-top:5%;\" class=\"ofertas\"></div>\n  <div  ng-repeat=\"c in scope.computer\">\n    <div class=\"tarjeta\">\n        <div class=\"nombre\">{{c.name}}</div>\n        <div class=\"imagen\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n        <a  ui-sref-active=\"active\" ui-sref=\"app.details({ id: c._id})\" class=\"listb\"><span>Details</span></a>        \n        <div class=\"morei\">\n            <div> Precio- {{c.price}} </div>\n            <div> Tipo- {{c.type}} </div>\n            <div> Marca- {{c.marca}} </div>\n        </div>\n    </div>\n</div>\n</div>");
   $templateCache.put("profile/profile-articles.html", "<article-list limit=\"5\" list-config=\"$ctrl.listConfig\"></article-list>\n");
-  $templateCache.put("profile/profile.html", "<div class=\"profile-page\">\n\n  <!-- User\'s basic info & action buttons -->\n  <div class=\"user-info\">\n    <div class=\"container\">\n      <div class=\"row\">\n        <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n          <img ng-src=\"{{::$ctrl.profile.image}}\" class=\"user-img\" />\n          <h4 ng-bind=\"::$ctrl.profile.username\"></h4>\n          <p ng-bind=\"::$ctrl.profile.bio\"></p>\n\n          <a ui-sref=\"app.settings\"\n            class=\"btn btn-sm btn-outline-secondary action-btn\"\n            ng-show=\"$ctrl.isUser\">\n            <i class=\"ion-gear-a\"></i> Edit Profile Settings\n          </a>\n\n          <follow-btn user=\"$ctrl.profile\" ng-hide=\"$ctrl.isUser\"></follow-btn>\n\n        </div>\n      </div>\n    </div>\n  </div>\n\n  <!-- Container where User\'s posts & favs are list w/ toggle tabs -->\n  <div class=\"container\">\n    <div class=\"row\">\n\n      <div class=\"col-xs-12 col-md-10 offset-md-1\">\n\n        <!-- Tabs for switching between author articles & favorites -->\n        <div class=\"articles-toggle\">\n          <ul class=\"nav nav-pills outline-active\">\n\n            <li class=\"nav-item\">\n              <a class=\"nav-link active\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.main({username: $ctrl.profile.username})\">\n                My Articles\n              </a>\n            </li>\n            \n            <li class=\"nav-item\">\n              <a class=\"nav-link\"\n                ui-sref-active=\"active\"\n                ui-sref=\"app.profile.favorites({username: $ctrl.profile.username})\">\n                Favorited Articles\n              </a>\n            </li>\n\n          </ul>\n        </div>\n\n        <!-- List of articles -->\n        <div ui-view></div>\n\n\n      </div>\n\n    <!-- End row & container divs -->\n    </div>\n  </div>\n\n</div>\n");
-  $templateCache.put("settings/settings.html", "<div class=\"settings-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n\n        <h1 class=\"text-xs-center\">Your Settings</h1>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                type=\"text\"\n                placeholder=\"URL of profile picture\"\n                ng-model=\"$ctrl.formData.image\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <textarea class=\"form-control form-control-lg\"\n                rows=\"8\"\n                placeholder=\"Short bio about you\"\n                ng-model=\"$ctrl.formData.bio\">\n              </textarea>\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"New Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\">\n              Update Settings\n            </button>\n\n          </fieldset>\n        </form>\n\n        <!-- Line break for logout button -->\n        <hr />\n\n        <button class=\"btn btn-outline-danger\"\n          ng-click=\"$ctrl.logout()\">\n          Or click here to logout.\n        </button>\n\n      </div>\n    </div>\n  </div>\n</div>\n");
+  $templateCache.put("profile/profile.html", "<div class=\"profile-page\">\n\n  <!-- User\'s basic info & action buttons -->\n  <div class=\"user-info\">\n    <div class=\"container\">\n      <div class=\"row\">\n        <div style=\"padding-top:5%; text-align:center;\">\n\n          <img ng-src=\"{{::$ctrl.profile.image}}\" class=\"user-img\" />\n          <h4 ng-bind=\"::$ctrl.profile.username\"></h4>\n          <p ng-bind=\"::$ctrl.profile.email\"></p>\n\n          <a ui-sref=\"app.settings\"\n            class=\"btn btn-sm btn-outline-secondary action-btn\"\n            ng-show=\"$ctrl.isUser\">\n            <i class=\"ion-gear-a\"></i> Edit Profile Settings\n          </a>\n        </div>\n      </div>\n    </div>\n  </div>\n\n</div>\n");
+  $templateCache.put("settings/settings.html", "<div class=\"settings-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n\n        <h1 class=\"text-xs-center\">Your Settings</h1>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\">\n                \n                <input class=\"form-control\"\n                type=\"text\"\n                placeholder=\"URL of profile picture\"\n                ng-model=\"$ctrl.formData.image\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-minlength=\"2\" maxlength=\"100\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n                <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Name\"\n                ng-minlength=\"2\" maxlength=\"100\"\n                ng-model=\"$ctrl.formData.name\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n                <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Apellidos\"\n                ng-minlength=\"2\" maxlength=\"100\"\n                ng-model=\"$ctrl.formData.apellidos\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n                <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Dni\"\n                ng-minlength=\"8\" maxlength=\"9\"\n                ng-model=\"$ctrl.formData.dni\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"New Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\" calendar required\n                placeholder=\"Date Birthday\"\n                ng-pattern=\"/(0[1-9]|1[0-9]|2[0-9]|3[01])/(0[1-9]|1[012])/[0-9]{4}/\"\n                 class=\"form-control\" dir=\"auto\" maxlength=\"100\"\n                ng-model=\"$ctrl.formData.date_birthday\"/>\n            </fieldset>\n\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\">\n              Update Settings\n            </button>\n\n          </fieldset>\n        </form>\n\n      </div>\n    </div>\n  </div>\n</div>\n");
   $templateCache.put("components/article-helpers/article-list.html", "<article-preview\n  article=\"article\"\n  ng-repeat=\"article in $ctrl.list\">\n</article-preview>\n\n<div class=\"article-preview\"\n  ng-hide=\"!$ctrl.loading\">\n  Loading articles...\n</div>\n\n<div class=\"article-preview\"\n  ng-show=\"!$ctrl.loading && !$ctrl.list.length\">\n  No articles are here... yet.\n</div>\n\n<list-pagination\n total-pages=\"$ctrl.listConfig.totalPages\"\n current-page=\"$ctrl.listConfig.currentPage\"\n ng-hide=\"$ctrl.listConfig.totalPages <= 1\">\n</list-pagination>\n");
   $templateCache.put("components/article-helpers/article-meta.html", "<div class=\"article-meta\">\n  <a ui-sref=\"app.profile.main({ username:$ctrl.article.author.username })\">\n    <img ng-src=\"{{$ctrl.article.author.image}}\" />\n  </a>\n\n  <div class=\"info\">\n    <a class=\"author\"\n      ui-sref=\"app.profile.main({ username:$ctrl.article.author.username })\"\n      ng-bind=\"$ctrl.article.author.username\">\n    </a>\n    <span class=\"date\"\n      ng-bind=\"$ctrl.article.createdAt | date: \'longDate\' \">\n    </span>\n  </div>\n\n  <ng-transclude></ng-transclude>\n</div>\n");
   $templateCache.put("components/article-helpers/article-preview.html", "<div class=\"article-preview\">\n  <article-meta article=\"$ctrl.article\">\n    <favorite-btn\n      article=\"$ctrl.article\"\n      class=\"pull-xs-right\">\n      {{$ctrl.article.favoritesCount}}\n    </favorite-btn>\n  </article-meta>\n\n  <a ui-sref=\"app.article({ slug: $ctrl.article.slug })\" class=\"preview-link\">\n    <h1 ng-bind=\"$ctrl.article.title\"></h1>\n    <p ng-bind=\"$ctrl.article.description\"></p>\n    <span>Read more...</span>\n    <ul class=\"tag-list\">\n      <li class=\"tag-default tag-pill tag-outline\"\n        ng-repeat=\"tag in $ctrl.article.tagList\">\n        {{tag}}\n      </li>\n    </ul>\n  </a>\n</div>\n");
@@ -41160,7 +43611,7 @@ angular.module("templates", []).run(["$templateCache", function ($templateCache)
   $templateCache.put("components/buttons/follow-btn.html", "<button\n  class=\"btn btn-sm action-btn\"\n  ng-class=\"{ \'disabled\': $ctrl.isSubmitting,\n              \'btn-outline-secondary\': !$ctrl.user.following,\n              \'btn-secondary\': $ctrl.user.following }\"\n  ng-click=\"$ctrl.submit()\">\n  <i class=\"ion-plus-round\"></i>\n  &nbsp;\n  {{ $ctrl.user.following ? \'Unfollow\' : \'Follow\' }} {{ $ctrl.user.username }}\n</button>\n");
 }]);
 
-},{}],27:[function(require,module,exports){
+},{}],24:[function(require,module,exports){
 'use strict';
 
 authInterceptor.$inject = ["JWT", "AppConstants", "$window", "$q"];
@@ -41194,7 +43645,7 @@ function authInterceptor(JWT, AppConstants, $window, $q) {
 
 exports.default = authInterceptor;
 
-},{}],28:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 'use strict';
 
 ContactConfig.$inject = ["$stateProvider"];
@@ -41214,7 +43665,7 @@ function ContactConfig($stateProvider) {
 
 exports.default = ContactConfig;
 
-},{}],29:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41223,7 +43674,7 @@ Object.defineProperty(exports, "__esModule", {
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var ContactCtrl = function ContactCtrl(AppConstants, $scope, Contactservice) {
+var ContactCtrl = function ContactCtrl(AppConstants, $scope, Contactservice, $state, toastr) {
   'ngInject';
 
   _classCallCheck(this, ContactCtrl);
@@ -41231,6 +43682,8 @@ var ContactCtrl = function ContactCtrl(AppConstants, $scope, Contactservice) {
   this.appName = AppConstants.appName;
   this._$scope = $scope;
   this._Contactservice = Contactservice;
+  this._$state = $state;
+  this._toastr = toastr;
 
   console.log('contact');
   var scope = this;
@@ -41256,26 +43709,28 @@ var ContactCtrl = function ContactCtrl(AppConstants, $scope, Contactservice) {
     this._Contactservice.sendEmail(data).then(function (response) {
       console.log(response);
       if (response) {
-        //logger.success('Email sent correctly!');
+        console.log('Email sent correctly!');
         scope.resultMessageOk = 'Email sent correctly!';
-        //$timeout(function () {
-        scope.resultMessageOk = '';
-        $state.go('main');
-        // }, 3000);
+        setTimeout(function () {
+          toastr.success('Se envio correctamente', 'Email');
+          scope.resultMessageOk = '';
+          $state.go('app.home');
+        }, 3000);
       } else {
+        toastr.error('Ha habido algun error intentalo mas tarde', 'Email');
         scope.resultMessageFail = 'Problem sending your email, please try again later!';
-        // $timeout(function () {
-        scope.resultMessageFail = '';
-        // }, 3000);
+        setTimeout(function () {
+          scope.resultMessageFail = '';
+        }, 3000);
       }
     });
   };
 };
-ContactCtrl.$inject = ["AppConstants", "$scope", "Contactservice"];
+ContactCtrl.$inject = ["AppConstants", "$scope", "Contactservice", "$state", "toastr"];
 
 exports.default = ContactCtrl;
 
-},{}],30:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41312,7 +43767,7 @@ ContactModule.controller('ContactCtrl', _contact4.default);
 
 exports.default = ContactModule;
 
-},{"./contact.config":28,"./contact.controller":29,"angular":3}],31:[function(require,module,exports){
+},{"./contact.config":25,"./contact.controller":26,"angular":5}],28:[function(require,module,exports){
 'use strict';
 
 EditorConfig.$inject = ["$stateProvider"];
@@ -41353,7 +43808,7 @@ function EditorConfig($stateProvider) {
 
 exports.default = EditorConfig;
 
-},{}],32:[function(require,module,exports){
+},{}],29:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41421,7 +43876,7 @@ var EditorCtrl = function () {
 
 exports.default = EditorCtrl;
 
-},{}],33:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41455,7 +43910,7 @@ editorModule.controller('EditorCtrl', _editor4.default);
 
 exports.default = editorModule;
 
-},{"./editor.config":31,"./editor.controller":32,"angular":3}],34:[function(require,module,exports){
+},{"./editor.config":28,"./editor.controller":29,"angular":5}],31:[function(require,module,exports){
 'use strict';
 
 HomeConfig.$inject = ["$stateProvider"];
@@ -41476,7 +43931,7 @@ function HomeConfig($stateProvider) {
 
 exports.default = HomeConfig;
 
-},{}],35:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41488,29 +43943,27 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 var HomeCtrl = function HomeCtrl(Computerservice, AppConstants, $scope) {
   'ngInject';
 
+  var _this = this;
+
   _classCallCheck(this, HomeCtrl);
 
   this.appName = AppConstants.appName;
   this._$scope = $scope;
   this._Computerservice = Computerservice;
-  console.log('Hola');
+
   // Get list of all tags
   this._Computerservice.getAll().then(function (computer) {
-    //this.computer = true;
-    //console.log(computer);
+    _this.computer = true;
+    console.log(computer);
     //console.log(User.current);//null
-    $scope.computer = computer;
+    _this.computer = computer;
   });
-
-  vm.pageChanged = function () {
-    update();
-  };
 };
 HomeCtrl.$inject = ["Computerservice", "AppConstants", "$scope"];
 
 exports.default = HomeCtrl;
 
-},{}],36:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41544,7 +43997,7 @@ homeModule.controller('HomeCtrl', _home4.default);
 
 exports.default = homeModule;
 
-},{"./home.config":34,"./home.controller":35,"angular":3}],37:[function(require,module,exports){
+},{"./home.config":31,"./home.controller":32,"angular":5}],34:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41572,7 +44025,7 @@ var AppFooter = {
 
 exports.default = AppFooter;
 
-},{}],38:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41590,6 +44043,7 @@ var AppHeaderCtrl = function AppHeaderCtrl(AppConstants, User, $scope) {
 
   this.appName = AppConstants.appName;
   this.currentUser = User.current;
+  this.logout = User.logout.bind(User);
 
   $scope.$watch('User.current', function (newUser) {
     _this.currentUser = newUser;
@@ -41604,7 +44058,7 @@ var AppHeader = {
 
 exports.default = AppHeader;
 
-},{}],39:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41636,7 +44090,7 @@ layoutModule.component('appFooter', _footer2.default);
 
 exports.default = layoutModule;
 
-},{"./footer.component":37,"./header.component":38,"angular":3}],40:[function(require,module,exports){
+},{"./footer.component":34,"./header.component":35,"angular":5}],37:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41676,7 +44130,7 @@ listModule.controller('DetailsCtrl', _listDetails2.default);
 
 exports.default = listModule;
 
-},{"./list.config":41,"./list.controller":42,"./list.details.controller":43,"angular":3}],41:[function(require,module,exports){
+},{"./list.config":38,"./list.controller":39,"./list.details.controller":40,"angular":5}],38:[function(require,module,exports){
 'use strict';
 
 ListConfig.$inject = ["$stateProvider"];
@@ -41688,19 +44142,33 @@ function ListConfig($stateProvider) {
   'ngInject';
 
   $stateProvider.state('app.list', {
-    url: '/list',
+    url: '/list/:type',
     controller: 'ListCtrl',
     controllerAs: 'scope',
-    templateUrl: 'list/list.html'
+    templateUrl: 'list/list.html',
+    resolve: {
+      categorias: ["Computerservice", "$stateParams", function categorias(Computerservice, $stateParams) {
+        console.log($stateParams.type);
+        return Computerservice.getOne($stateParams.type).then(function (categorias) {
+          return categorias;
+        }, function (err) {
+          return $state.go('app.home');
+        });
+      }]
+    }
   }).state('app.details', {
     url: '/details/:id',
     controller: 'DetailsCtrl',
     controllerAs: 'scope',
     templateUrl: 'list/list.details.html',
     resolve: {
-      details: ["$stateParams", function details($stateParams) {
-        //console.log($stateParams);
-        return $stateParams;
+      details: ["Computerservice", "$stateParams", function details(Computerservice, $stateParams) {
+        console.log($stateParams.id);
+        return Computerservice.get($stateParams.id).then(function (details) {
+          return details;
+        }, function (err) {
+          return $state.go('app.list');
+        });
       }]
     }
   });
@@ -41708,8 +44176,8 @@ function ListConfig($stateProvider) {
 
 exports.default = ListConfig;
 
-},{}],42:[function(require,module,exports){
-'use strict';
+},{}],39:[function(require,module,exports){
+"use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
@@ -41717,32 +44185,38 @@ Object.defineProperty(exports, "__esModule", {
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var ListCtrl = function ListCtrl(User, Computerservice, AppConstants, $scope) {
+var ListCtrl = function ListCtrl(User, Computerservice, categorias, AppConstants, $scope) {
   'ngInject';
 
   _classCallCheck(this, ListCtrl);
 
+  this._categorias = categorias;
   this.appName = AppConstants.appName;
   this._$scope = $scope;
   this._Computerservice = Computerservice;
 
   var scope = this;
   scope.computer = [];
-  scope.shop = [];
 
-  Computerservice.getAll().then(function (obj) {
-    console.log(obj.computer);
-    obj.computer.forEach(function (param) {
+  if (this._categorias !== "") {
+    this._categorias.computer.forEach(function (param) {
+      console.log(param);
       scope.computer.push(param);
     });
-    console.log(scope.computer);
-  });
+  } else if (this._categorias === "") {
+    this._Computerservice.getAll().then(function (obj) {
+      obj.computer.forEach(function (param) {
+        scope.computer.push(param);
+      });
+      console.log(scope.computer);
+    });
+  }
 };
-ListCtrl.$inject = ["User", "Computerservice", "AppConstants", "$scope"];
+ListCtrl.$inject = ["User", "Computerservice", "categorias", "AppConstants", "$scope"];
 
 exports.default = ListCtrl;
 
-},{}],43:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41754,32 +44228,179 @@ function _classCallCheck(instance, Constructor) { if (!(instance instanceof Cons
 var DetailsCtrl = function DetailsCtrl(User, $stateParams, AppConstants, $scope, details, Computerservice) {
   'ngInject';
 
+  var _this = this;
+
   _classCallCheck(this, DetailsCtrl);
 
   this.details = details;
   this._Computerservice = Computerservice;
   this._$scope = $scope;
+  console.log(details);
 
   var scope = this;
   scope.computer = [];
   scope.shop = [];
 
   Computerservice.getAll().then(function (obj) {
-    obj.computer.forEach(function (param) {
-      if (param._id == details.id) {
-        scope.computer.push(param);
-      }
+    _this.details.computer.forEach(function (param) {
+      console.log(details.id);
+      // if(param._id==details.id){
+      scope.computer.push(param);
+      // }
     });
     console.log(scope.computer);
   });
-
   console.log(details.id);
 };
 DetailsCtrl.$inject = ["User", "$stateParams", "AppConstants", "$scope", "details", "Computerservice"];
 
 exports.default = DetailsCtrl;
 
+},{}],41:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _angular = require('angular');
+
+var _angular2 = _interopRequireDefault(_angular);
+
+var _profile = require('./profile.config');
+
+var _profile2 = _interopRequireDefault(_profile);
+
+var _profile3 = require('./profile.controller');
+
+var _profile4 = _interopRequireDefault(_profile3);
+
+var _profileArticles = require('./profile-articles.controller');
+
+var _profileArticles2 = _interopRequireDefault(_profileArticles);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+// Create the module where our functionality can attach to
+var profileModule = _angular2.default.module('app.profile', []);
+
+// Include our UI-Router config settings
+
+profileModule.config(_profile2.default);
+
+// Controllers
+
+profileModule.controller('ProfileCtrl', _profile4.default);
+
+profileModule.controller('ProfileArticlesCtrl', _profileArticles2.default);
+
+exports.default = profileModule;
+
+},{"./profile-articles.controller":42,"./profile.config":43,"./profile.controller":44,"angular":5}],42:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var ProfileArticlesCtrl = function ProfileArticlesCtrl(profile, $state, $rootScope) {
+  'ngInject';
+
+  // The profile for this page, resolved by UI Router
+
+  _classCallCheck(this, ProfileArticlesCtrl);
+
+  this.profile = profile;
+  this.profileState = $state.current.name.replace('app.profile.', '');
+  // Both favorites and author articles require the 'all' type
+  this.listConfig = { type: 'all' };
+
+  // `main` state's filter should be by author
+  if (this.profileState === 'main') {
+    this.listConfig.filters = { author: this.profile.username };
+    // Set page title
+    $rootScope.setPageTitle('@' + this.profile.username);
+  }
+};
+ProfileArticlesCtrl.$inject = ["profile", "$state", "$rootScope"];
+
+exports.default = ProfileArticlesCtrl;
+
+},{}],43:[function(require,module,exports){
+'use strict';
+
+ProfileConfig.$inject = ["$stateProvider"];
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+function ProfileConfig($stateProvider) {
+  'ngInject';
+
+  $stateProvider.state('app.profile', {
+    abstract: true,
+    url: '/@:username',
+    controller: 'ProfileCtrl',
+    controllerAs: '$ctrl',
+    templateUrl: 'profile/profile.html',
+    resolve: {
+      profile: ["Profile", "$state", "$stateParams", function profile(Profile, $state, $stateParams) {
+        return Profile.get($stateParams.username).then(function (profile) {
+          return profile;
+        }, function (err) {
+          return $state.go('app.home');
+        });
+      }]
+    }
+  }).state('app.profile.main', {
+    url: '',
+    controller: 'ProfileArticlesCtrl',
+    controllerAs: '$ctrl',
+    templateUrl: 'profile/profile-articles.html',
+    title: 'Profile'
+  }).state('app.profile.favorites', {
+    url: '/favorites',
+    controller: 'ProfileArticlesCtrl',
+    controllerAs: '$ctrl',
+    templateUrl: 'profile/profile-articles.html',
+    title: 'Favorites'
+  });
+};
+
+exports.default = ProfileConfig;
+
 },{}],44:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var ProfileCtrl = function ProfileCtrl(profile, User) {
+  'ngInject';
+
+  _classCallCheck(this, ProfileCtrl);
+
+  this.profile = profile;
+  console.log(profile);
+
+  if (User.current) {
+    console.log(User.current.username);
+    console.log(this.profile.username);
+    //console.log(User.current.email);
+    this.isUser = User.current.username === this.profile.username;
+  } else {
+    this.isUser = false;
+  }
+};
+ProfileCtrl.$inject = ["profile", "User"];
+
+exports.default = ProfileCtrl;
+
+},{}],45:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41895,7 +44516,7 @@ var Articles = function () {
 
 exports.default = Articles;
 
-},{}],45:[function(require,module,exports){
+},{}],46:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41956,7 +44577,7 @@ var Comments = function () {
 
 exports.default = Comments;
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -41988,8 +44609,31 @@ var Computer = function () {
       }).then(function (res) {
         return res.data;
       });
-      console.log(res.data);
-      return res.data;
+    }
+  }, {
+    key: 'get',
+    value: function get(id) {
+      console.log('Get' + id);
+      return this._$http({
+        url: this._AppConstants.api + '/computer/' + id,
+        method: 'POST'
+      }).then(function (res) {
+        return res.data;
+      });
+      console.log(res);
+    }
+  }, {
+    key: 'getOne',
+    value: function getOne(type) {
+      console.log('GetOne' + type);
+      return this._$http({
+        url: this._AppConstants.api + '/computer/' + type,
+        method: 'GET'
+      }).then(function (res) {
+        return res.data;
+      });
+      console.log(res);
+      // return res.data;
     }
   }]);
 
@@ -41998,7 +44642,7 @@ var Computer = function () {
 
 exports.default = Computer;
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42043,7 +44687,7 @@ var Contactservice = function () {
 
 exports.default = Contactservice;
 
-},{}],48:[function(require,module,exports){
+},{}],49:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42109,7 +44753,7 @@ servicesModule.service('Computerservice', _computer2.default);
 
 exports.default = servicesModule;
 
-},{"./articles.service":44,"./comments.service":45,"./computer.service":46,"./contact-service":47,"./jwt.service":49,"./profile.service":50,"./tags.service":51,"./user.service":52,"angular":3}],49:[function(require,module,exports){
+},{"./articles.service":45,"./comments.service":46,"./computer.service":47,"./contact-service":48,"./jwt.service":50,"./profile.service":51,"./tags.service":52,"./user.service":53,"angular":5}],50:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42153,7 +44797,7 @@ var JWT = function () {
 
 exports.default = JWT;
 
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42185,26 +44829,6 @@ var Profile = function () {
         return res.data.profile;
       });
     }
-  }, {
-    key: 'follow',
-    value: function follow(username) {
-      return this._$http({
-        url: this._AppConstants.api + '/profiles/' + username + '/follow',
-        method: 'POST'
-      }).then(function (res) {
-        return res.data;
-      });
-    }
-  }, {
-    key: 'unfollow',
-    value: function unfollow(username) {
-      return this._$http({
-        url: this._AppConstants.api + '/profiles/' + username + '/follow',
-        method: 'DELETE'
-      }).then(function (res) {
-        return res.data;
-      });
-    }
   }]);
 
   return Profile;
@@ -42212,7 +44836,7 @@ var Profile = function () {
 
 exports.default = Profile;
 
-},{}],51:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42251,7 +44875,7 @@ var Tags = function () {
 
 exports.default = Tags;
 
-},{}],52:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42301,6 +44925,7 @@ var User = function () {
     value: function update(fields) {
       var _this2 = this;
 
+      console.log(fields);
       return this._$http({
         url: this._AppConstants.api + '/user',
         method: 'PUT',
@@ -42372,7 +44997,7 @@ var User = function () {
 
 exports.default = User;
 
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42405,7 +45030,7 @@ settingsModule.controller('SettingsCtrl', _settings4.default);
 
 exports.default = settingsModule;
 
-},{"./settings.config":54,"./settings.controller":55,"angular":3}],54:[function(require,module,exports){
+},{"./settings.config":55,"./settings.controller":56,"angular":5}],55:[function(require,module,exports){
 'use strict';
 
 SettingsConfig.$inject = ["$stateProvider"];
@@ -42431,7 +45056,7 @@ function SettingsConfig($stateProvider) {
 
 exports.default = SettingsConfig;
 
-},{}],55:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -42443,22 +45068,26 @@ var _createClass = function () { function defineProperties(target, props) { for 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 var SettingsCtrl = function () {
-  SettingsCtrl.$inject = ["User", "$state"];
-  function SettingsCtrl(User, $state) {
+  SettingsCtrl.$inject = ["User", "$state", "toastr"];
+  function SettingsCtrl(User, $state, toastr) {
     'ngInject';
 
     _classCallCheck(this, SettingsCtrl);
 
     this._User = User;
     this._$state = $state;
+    this._toastr = toastr;
 
     this.formData = {
       email: User.current.email,
-      bio: User.current.bio,
+      name: User.current.name,
+      apellidos: User.current.apellidos,
       image: User.current.image,
-      username: User.current.username
+      username: User.current.username,
+      date_birthday: User.current.date_birthday,
+      dni: User.current.dni
+      //this.logout = User.logout.bind(User);
     };
-    this.logout = User.logout.bind(User);
   }
 
   _createClass(SettingsCtrl, [{
@@ -42468,8 +45097,14 @@ var SettingsCtrl = function () {
 
       this.isSubmitting = true;
       this._User.update(this.formData).then(function (user) {
+        setTimeout(function () {
+          _this._toastr.success('Su cuenta se ha actualizado correctamente.', 'Actualización');
+        }, 800);
         _this._$state.go('app.profile.main', { username: user.username });
       }, function (err) {
+        setTimeout(function () {
+          _this._toastr.success('Lo sentimos su cuenta no se ha actualizado.', 'Error');
+        }, 800);
         _this.isSubmitting = false;
         _this.errors = err.data.errors;
       });
@@ -42481,4 +45116,4 @@ var SettingsCtrl = function () {
 
 exports.default = SettingsCtrl;
 
-},{}]},{},[5]);
+},{}]},{},[7]);

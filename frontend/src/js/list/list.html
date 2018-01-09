@@ -1,13 +1,15 @@
-<div class="home-page" >
-  <div class="ofertas"></div>
-  <div ng-repeat="c in scope.computer">
+<div class="list-page" >
+  <div  style="padding-top:5%;" class="ofertas"></div>
+  <div  ng-repeat="c in scope.computer">
     <div class="tarjeta">
-        <div class="imagen"><img src="{{c.picture}}" alt="" height="150px" width="150px"></div>
         <div class="nombre">{{c.name}}</div>
-        <div>{{c._id}}</div>
-        <a  ui-sref-active="active" ui-sref="app.details({ id: c._id})" class="menuToggle"><span>Details</span></a>        
+        <div class="imagen"><img src="{{c.picture}}" alt="" height="150px" width="150px"></div>
+        <a  ui-sref-active="active" ui-sref="app.details({ id: c._id})" class="listb"><span>Details</span></a>        
+        <div class="morei">
+            <div> Precio- {{c.price}} </div>
+            <div> Tipo- {{c.type}} </div>
+            <div> Marca- {{c.marca}} </div>
+        </div>
     </div>
 </div>
-  
-  </div>
-  
+</div>

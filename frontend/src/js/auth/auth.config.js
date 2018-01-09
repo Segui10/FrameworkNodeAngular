@@ -25,8 +25,18 @@ function AuthConfig($stateProvider, $httpProvider) {
         return User.ensureAuthIs(false);
       }
     }
-  });
+  })
 
+  .state('app.facebook', {
+    url: '/register',
+    controller: 'AuthCtrl as $ctrl',
+    title: 'Sign up',
+    resolve: {
+      auth: function(User) {
+        return User.ensureAuthIs(false);
+      }
+    }
+  })
 };
 
 export default AuthConfig;
