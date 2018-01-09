@@ -3833,11 +3833,11 @@
 		float: left;
 		padding-top: 5px;
 		background-color: #505393;
-		height: 210px;
+		height: 205px;
 		width: 49%;
 	}
 	.imagen{
-		margin: 1%;
+		margin: 5px;
 		margin-top: 0px;
 		height: 150px;
 		width: 150px;
@@ -3849,9 +3849,9 @@
 		font-size: 20px;
 		padding: 5px;
 		width: 98%;
-		margin-left: 1%;
+		margin-bottom: 6px;
 		background-color: #3a3c6a;
-		margin-bottom: 10px;
+		margin-left: 1%;
 		display: inline-block;
 	}
 
@@ -3877,18 +3877,9 @@
 }
 
 .listb{
+	padding: 60px;
+	background-color: #6C6F9E;
 	float: right;
 	margin-right: 1%;
-	padding: 60px;
-	background-color: #6A6C9C;
-}
-
-.morei{
-margin-right: 2%;
-width: 40%;
-padding: 1%;
-height: 150px;
-float: right;
-background-color: #3a3c6a;
-
+	text-decoration: none;
 }
