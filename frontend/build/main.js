@@ -1,4 +1,303 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+'use strict'
+
+var angular = require('angular')
+
+module.exports = angular.module('assert-q-constructor', [])
+  .factory('assertQConstructor', main)
+  .name
+
+main.$inject = ['$q']
+function main ($q) {
+  return function assertQConstructor (message) {
+    if (typeof $q !== 'function') {
+      throw new Error(message || '$q is not a function')
+    }
+  }
+}
+
+},{"angular":12}],2:[function(require,module,exports){
+'use strict'
+
+var promisify = require('./promisify')
+
+module.exports = require('angular')
+  .module('promisify', [])
+  .service('promisify', promisify)
+  .name
+
+},{"./promisify":3,"angular":12}],3:[function(require,module,exports){
+'use strict'
+
+var angular = require('angular')
+var assertFn = require('assert-function')
+var toArray = require('to-array')
+
+module.exports = promisify$Q
+
+promisify$Q.$inject = ['$q', '$rootScope']
+function promisify$Q ($q, $rootScope) {
+  function promisify (callback, receiver) {
+    receiver = receiver || {}
+
+    if (typeof callback === 'string') {
+      callback = receiver[callback]
+    }
+
+    assertFn(callback)
+
+    function promisifed () {
+      var args = arguments
+      return $q(function (resolve, reject) {
+        var apply = $rootScope.$apply.bind($rootScope)
+        try {
+          callback.apply(receiver, toArray(args).concat(Nodeback(apply, resolve, reject)))
+        } catch (err) {
+          setTimeout(function () {
+            apply(function () {
+              reject(err)
+            })
+          })
+        }
+      })
+    }
+    promisifed.__isPromisifed__ = true
+    return promisifed
+  }
+
+  function promisifyAll (object) {
+    return angular.forEach(object, function (value, key) {
+      key = key + 'Async'
+      if (!value || typeof value !== 'function' || value.__isPromisifed__) return
+      object[key] = promisify(value, object)
+    })
+  }
+
+  return angular.extend(promisify, {
+    promisifyAll: promisifyAll
+  })
+}
+
+function Nodeback (apply, resolve, reject) {
+  return function nodeback (err, value) {
+    var args = arguments
+    apply(function () {
+      if (err) {
+        return reject(err)
+      }
+
+      if (args.length <= 2) {
+        return resolve(value)
+      }
+
+      resolve(toArray(args, 1))
+    })
+  }
+}
+
+},{"angular":12,"assert-function":19,"to-array":41}],4:[function(require,module,exports){
+'use strict';
+var isObj = require('is-obj');
+
+module.exports.get = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return obj;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var descriptor = Object.getOwnPropertyDescriptor(obj, pathArr[i]) || Object.getOwnPropertyDescriptor(Object.prototype, pathArr[i]);
+		if (descriptor && !descriptor.enumerable) {
+			return;
+		}
+
+		obj = obj[pathArr[i]];
+
+		if (obj === undefined || obj === null) {
+			// `obj` is either `undefined` or `null` so we want to stop the loop, and
+			// if this is not the last bit of the path, and
+			// if it did't return `undefined`
+			// it would return `null` if `obj` is `null`
+			// but we want `get({foo: null}, 'foo.bar')` to equal `undefined` not `null`
+			if (i !== pathArr.length - 1) {
+				return undefined;
+			}
+
+			break;
+		}
+	}
+
+	return obj;
+};
+
+module.exports.set = function (obj, path, value) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		if (!isObj(obj[p])) {
+			obj[p] = {};
+		}
+
+		if (i === pathArr.length - 1) {
+			obj[p] = value;
+		}
+
+		obj = obj[p];
+	}
+};
+
+module.exports.delete = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		if (i === pathArr.length - 1) {
+			delete obj[p];
+			return;
+		}
+
+		obj = obj[p];
+	}
+};
+
+module.exports.has = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return false;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		obj = obj[pathArr[i]];
+
+		if (obj === undefined) {
+			return false;
+		}
+	}
+
+	return true;
+};
+
+function getPathSegments(path) {
+	var pathArr = path.split('.');
+	var parts = [];
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		while (p[p.length - 1] === '\\' && pathArr[i + 1] !== undefined) {
+			p = p.slice(0, -1) + '.';
+			p += pathArr[++i];
+		}
+
+		parts.push(p);
+	}
+
+	return parts;
+}
+
+},{"is-obj":26}],5:[function(require,module,exports){
+'use strict'
+
+var angular = require('angular')
+var provider = require('./provider')
+
+module.exports = angular.module('angular-stripe', [
+  require('angular-q-promisify'),
+  require('angular-assert-q-constructor')
+])
+.provider('stripe', provider)
+.run(verifyQ)
+.name
+
+verifyQ.$inject = ['assertQConstructor']
+function verifyQ (assertQConstructor) {
+  assertQConstructor('angular-stripe: For Angular <= 1.2 support, first load https://github.com/bendrucker/angular-q-constructor')
+}
+
+},{"./provider":7,"angular":12,"angular-assert-q-constructor":1,"angular-q-promisify":2}],6:[function(require,module,exports){
+'use strict'
+
+var Lazy = require('lazy-async')
+var dot = require('dot-prop')
+var loadScript = require('load-script-global')
+var stripeErrback = require('stripe-errback')
+
+module.exports = LazyStripe
+
+function LazyStripe (url, promisify) {
+  var methods = stripeErrback.methods.async.concat(stripeErrback.methods.sync)
+  var lazy = Lazy(methods, load)
+
+  return methods.reduce(function (acc, method) {
+    var fn = dot.get(lazy, method)
+    dot.set(acc, method, promisify(fn))
+    return acc
+  }, {})
+
+  function load (callback) {
+    loadScript({
+      url: url,
+      global: 'Stripe'
+    }, onLoad)
+
+    function onLoad (err, Stripe) {
+      if (err) return callback(err)
+      var stripe = stripeErrback(Stripe)
+      stripe.setPublishableKey = Success(stripe.setPublishableKey, stripe)
+      callback(null, stripe)
+    }
+  }
+}
+
+function Success (fn, context) {
+  return function success () {
+    var callback = Array.prototype.pop.call(arguments)
+    fn.apply(context, arguments)
+    callback()
+  }
+}
+
+},{"dot-prop":4,"lazy-async":28,"load-script-global":30,"stripe-errback":39}],7:[function(require,module,exports){
+'use strict'
+
+var LazyStripe = require('./lazy')
+
+module.exports = stripeProvider
+
+function stripeProvider () {
+  var key = null
+  var stripe = null
+
+  this.url = 'https://js.stripe.com/v2/'
+  this.setPublishableKey = function setPublishableKey (_key) {
+    key = _key
+  }
+
+  this.$get = service
+  this.$get.$inject = ['promisify', '$exceptionHandler']
+
+  function service (promisify, $exceptionHandler) {
+    if (stripe) return stripe
+    stripe = LazyStripe(this.url, promisify)
+    stripe.setPublishableKey(key)
+    return stripe
+  }
+}
+
+},{"./lazy":6}],8:[function(require,module,exports){
 (function() {
   'use strict';
 
@@ -508,12 +807,12 @@
 
 angular.module("toastr").run(["$templateCache", function($templateCache) {$templateCache.put("directives/progressbar/progressbar.html","<div class=\"toast-progress\"></div>\n");
 $templateCache.put("directives/toast/toast.html","<div class=\"{{toastClass}} {{toastType}}\" ng-click=\"tapToast()\">\n  <div ng-switch on=\"allowHtml\">\n    <div ng-switch-default ng-if=\"title\" class=\"{{titleClass}}\" aria-label=\"{{title}}\">{{title}}</div>\n    <div ng-switch-default class=\"{{messageClass}}\" aria-label=\"{{message}}\">{{message}}</div>\n    <div ng-switch-when=\"true\" ng-if=\"title\" class=\"{{titleClass}}\" ng-bind-html=\"title\"></div>\n    <div ng-switch-when=\"true\" class=\"{{messageClass}}\" ng-bind-html=\"message\"></div>\n  </div>\n  <progress-bar ng-if=\"progressBar\"></progress-bar>\n</div>\n");}]);
-},{}],2:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 require('./dist/angular-toastr.tpls.js');
 module.exports = 'toastr';
 
 
-},{"./dist/angular-toastr.tpls.js":1}],3:[function(require,module,exports){
+},{"./dist/angular-toastr.tpls.js":8}],10:[function(require,module,exports){
 /**
  * State-based routing for AngularJS
  * @version v0.4.3
@@ -5198,7 +5497,7 @@ angular.module('ui.router.state')
   .filter('isState', $IsStateFilter)
   .filter('includedByState', $IncludedByStateFilter);
 })(window, window.angular);
-},{}],4:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 /**
  * @license AngularJS v1.6.7
  * (c) 2010-2017 Google, Inc. http://angularjs.org
@@ -39390,11 +39689,959 @@ $provide.value("$locale", {
 })(window);
 
 !window.angular.$$csp().noInlineStyle && window.angular.element(document.head).prepend('<style type="text/css">@charset "UTF-8";[ng\\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide:not(.ng-hide-animate){display:none !important;}ng\\:form{display:block;}.ng-animate-shim{visibility:hidden;}.ng-anchor{position:absolute;}</style>');
-},{}],5:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 require('./angular');
 module.exports = angular;
 
-},{"./angular":4}],6:[function(require,module,exports){
+},{"./angular":11}],13:[function(require,module,exports){
+/*!
+ * array-last <https://github.com/jonschlinkert/array-last>
+ *
+ * Copyright (c) 2014 Jon Schlinkert, contributors.
+ * Licensed under the MIT license.
+ */
+
+var isNumber = require('is-number');
+var slice = require('array-slice');
+
+module.exports = function last(arr, num) {
+  if (!Array.isArray(arr)) {
+    throw new Error('array-last expects an array as the first argument.');
+  }
+
+  if (arr.length === 0) {
+    return null;
+  }
+
+  var res = slice(arr, arr.length - (isNumber(num) ? +num : 1));
+  if (+num === 1 || num == null) {
+    return res[0];
+  }
+  return res;
+};
+
+},{"array-slice":14,"is-number":15}],14:[function(require,module,exports){
+/*!
+ * array-slice <https://github.com/jonschlinkert/array-slice>
+ *
+ * Copyright (c) 2014-2015, Jon Schlinkert.
+ * Licensed under the MIT License.
+ */
+
+'use strict';
+
+module.exports = function slice(arr, start, end) {
+  var len = arr.length >>> 0;
+  var range = [];
+
+  start = idx(arr, start);
+  end = idx(arr, end, len);
+
+  while (start < end) {
+    range.push(arr[start++]);
+  }
+  return range;
+};
+
+
+function idx(arr, pos, end) {
+  var len = arr.length >>> 0;
+
+  if (pos == null) {
+    pos = end || 0;
+  } else if (pos < 0) {
+    pos = Math.max(len + pos, 0);
+  } else {
+    pos = Math.min(pos, len);
+  }
+
+  return pos;
+}
+},{}],15:[function(require,module,exports){
+/*!
+ * is-number <https://github.com/jonschlinkert/is-number>
+ *
+ * Copyright (c) 2014 Jon Schlinkert, contributors.
+ * Licensed under the MIT License
+ */
+
+'use strict';
+
+module.exports = function isNumber(n) {
+  return !!(+n) || n === 0 || n === '0';
+};
+
+},{}],16:[function(require,module,exports){
+"use strict";
+
+// rawAsap provides everything we need except exception management.
+var rawAsap = require("./raw");
+// RawTasks are recycled to reduce GC churn.
+var freeTasks = [];
+// We queue errors to ensure they are thrown in right order (FIFO).
+// Array-as-queue is good enough here, since we are just dealing with exceptions.
+var pendingErrors = [];
+var requestErrorThrow = rawAsap.makeRequestCallFromTimer(throwFirstError);
+
+function throwFirstError() {
+    if (pendingErrors.length) {
+        throw pendingErrors.shift();
+    }
+}
+
+/**
+ * Calls a task as soon as possible after returning, in its own event, with priority
+ * over other events like animation, reflow, and repaint. An error thrown from an
+ * event will not interrupt, nor even substantially slow down the processing of
+ * other events, but will be rather postponed to a lower priority event.
+ * @param {{call}} task A callable object, typically a function that takes no
+ * arguments.
+ */
+module.exports = asap;
+function asap(task) {
+    var rawTask;
+    if (freeTasks.length) {
+        rawTask = freeTasks.pop();
+    } else {
+        rawTask = new RawTask();
+    }
+    rawTask.task = task;
+    rawAsap(rawTask);
+}
+
+// We wrap tasks with recyclable task objects.  A task object implements
+// `call`, just like a function.
+function RawTask() {
+    this.task = null;
+}
+
+// The sole purpose of wrapping the task is to catch the exception and recycle
+// the task object after its single use.
+RawTask.prototype.call = function () {
+    try {
+        this.task.call();
+    } catch (error) {
+        if (asap.onerror) {
+            // This hook exists purely for testing purposes.
+            // Its name will be periodically randomized to break any code that
+            // depends on its existence.
+            asap.onerror(error);
+        } else {
+            // In a web browser, exceptions are not fatal. However, to avoid
+            // slowing down the queue of pending tasks, we rethrow the error in a
+            // lower priority turn.
+            pendingErrors.push(error);
+            requestErrorThrow();
+        }
+    } finally {
+        this.task = null;
+        freeTasks[freeTasks.length] = this;
+    }
+};
+
+},{"./raw":17}],17:[function(require,module,exports){
+(function (global){
+"use strict";
+
+// Use the fastest means possible to execute a task in its own turn, with
+// priority over other events including IO, animation, reflow, and redraw
+// events in browsers.
+//
+// An exception thrown by a task will permanently interrupt the processing of
+// subsequent tasks. The higher level `asap` function ensures that if an
+// exception is thrown by a task, that the task queue will continue flushing as
+// soon as possible, but if you use `rawAsap` directly, you are responsible to
+// either ensure that no exceptions are thrown from your task, or to manually
+// call `rawAsap.requestFlush` if an exception is thrown.
+module.exports = rawAsap;
+function rawAsap(task) {
+    if (!queue.length) {
+        requestFlush();
+        flushing = true;
+    }
+    // Equivalent to push, but avoids a function call.
+    queue[queue.length] = task;
+}
+
+var queue = [];
+// Once a flush has been requested, no further calls to `requestFlush` are
+// necessary until the next `flush` completes.
+var flushing = false;
+// `requestFlush` is an implementation-specific method that attempts to kick
+// off a `flush` event as quickly as possible. `flush` will attempt to exhaust
+// the event queue before yielding to the browser's own event loop.
+var requestFlush;
+// The position of the next task to execute in the task queue. This is
+// preserved between calls to `flush` so that it can be resumed if
+// a task throws an exception.
+var index = 0;
+// If a task schedules additional tasks recursively, the task queue can grow
+// unbounded. To prevent memory exhaustion, the task queue will periodically
+// truncate already-completed tasks.
+var capacity = 1024;
+
+// The flush function processes all tasks that have been scheduled with
+// `rawAsap` unless and until one of those tasks throws an exception.
+// If a task throws an exception, `flush` ensures that its state will remain
+// consistent and will resume where it left off when called again.
+// However, `flush` does not make any arrangements to be called again if an
+// exception is thrown.
+function flush() {
+    while (index < queue.length) {
+        var currentIndex = index;
+        // Advance the index before calling the task. This ensures that we will
+        // begin flushing on the next task the task throws an error.
+        index = index + 1;
+        queue[currentIndex].call();
+        // Prevent leaking memory for long chains of recursive calls to `asap`.
+        // If we call `asap` within tasks scheduled by `asap`, the queue will
+        // grow, but to avoid an O(n) walk for every task we execute, we don't
+        // shift tasks off the queue after they have been executed.
+        // Instead, we periodically shift 1024 tasks off the queue.
+        if (index > capacity) {
+            // Manually shift all values starting at the index back to the
+            // beginning of the queue.
+            for (var scan = 0, newLength = queue.length - index; scan < newLength; scan++) {
+                queue[scan] = queue[scan + index];
+            }
+            queue.length -= index;
+            index = 0;
+        }
+    }
+    queue.length = 0;
+    index = 0;
+    flushing = false;
+}
+
+// `requestFlush` is implemented using a strategy based on data collected from
+// every available SauceLabs Selenium web driver worker at time of writing.
+// https://docs.google.com/spreadsheets/d/1mG-5UYGup5qxGdEMWkhP6BWCz053NUb2E1QoUTU16uA/edit#gid=783724593
+
+// Safari 6 and 6.1 for desktop, iPad, and iPhone are the only browsers that
+// have WebKitMutationObserver but not un-prefixed MutationObserver.
+// Must use `global` or `self` instead of `window` to work in both frames and web
+// workers. `global` is a provision of Browserify, Mr, Mrs, or Mop.
+
+/* globals self */
+var scope = typeof global !== "undefined" ? global : self;
+var BrowserMutationObserver = scope.MutationObserver || scope.WebKitMutationObserver;
+
+// MutationObservers are desirable because they have high priority and work
+// reliably everywhere they are implemented.
+// They are implemented in all modern browsers.
+//
+// - Android 4-4.3
+// - Chrome 26-34
+// - Firefox 14-29
+// - Internet Explorer 11
+// - iPad Safari 6-7.1
+// - iPhone Safari 7-7.1
+// - Safari 6-7
+if (typeof BrowserMutationObserver === "function") {
+    requestFlush = makeRequestCallFromMutationObserver(flush);
+
+// MessageChannels are desirable because they give direct access to the HTML
+// task queue, are implemented in Internet Explorer 10, Safari 5.0-1, and Opera
+// 11-12, and in web workers in many engines.
+// Although message channels yield to any queued rendering and IO tasks, they
+// would be better than imposing the 4ms delay of timers.
+// However, they do not work reliably in Internet Explorer or Safari.
+
+// Internet Explorer 10 is the only browser that has setImmediate but does
+// not have MutationObservers.
+// Although setImmediate yields to the browser's renderer, it would be
+// preferrable to falling back to setTimeout since it does not have
+// the minimum 4ms penalty.
+// Unfortunately there appears to be a bug in Internet Explorer 10 Mobile (and
+// Desktop to a lesser extent) that renders both setImmediate and
+// MessageChannel useless for the purposes of ASAP.
+// https://github.com/kriskowal/q/issues/396
+
+// Timers are implemented universally.
+// We fall back to timers in workers in most engines, and in foreground
+// contexts in the following browsers.
+// However, note that even this simple case requires nuances to operate in a
+// broad spectrum of browsers.
+//
+// - Firefox 3-13
+// - Internet Explorer 6-9
+// - iPad Safari 4.3
+// - Lynx 2.8.7
+} else {
+    requestFlush = makeRequestCallFromTimer(flush);
+}
+
+// `requestFlush` requests that the high priority event queue be flushed as
+// soon as possible.
+// This is useful to prevent an error thrown in a task from stalling the event
+// queue if the exception handled by Node.js’s
+// `process.on("uncaughtException")` or by a domain.
+rawAsap.requestFlush = requestFlush;
+
+// To request a high priority event, we induce a mutation observer by toggling
+// the text of a text node between "1" and "-1".
+function makeRequestCallFromMutationObserver(callback) {
+    var toggle = 1;
+    var observer = new BrowserMutationObserver(callback);
+    var node = document.createTextNode("");
+    observer.observe(node, {characterData: true});
+    return function requestCall() {
+        toggle = -toggle;
+        node.data = toggle;
+    };
+}
+
+// The message channel technique was discovered by Malte Ubl and was the
+// original foundation for this library.
+// http://www.nonblocking.io/2011/06/windownexttick.html
+
+// Safari 6.0.5 (at least) intermittently fails to create message ports on a
+// page's first load. Thankfully, this version of Safari supports
+// MutationObservers, so we don't need to fall back in that case.
+
+// function makeRequestCallFromMessageChannel(callback) {
+//     var channel = new MessageChannel();
+//     channel.port1.onmessage = callback;
+//     return function requestCall() {
+//         channel.port2.postMessage(0);
+//     };
+// }
+
+// For reasons explained above, we are also unable to use `setImmediate`
+// under any circumstances.
+// Even if we were, there is another bug in Internet Explorer 10.
+// It is not sufficient to assign `setImmediate` to `requestFlush` because
+// `setImmediate` must be called *by name* and therefore must be wrapped in a
+// closure.
+// Never forget.
+
+// function makeRequestCallFromSetImmediate(callback) {
+//     return function requestCall() {
+//         setImmediate(callback);
+//     };
+// }
+
+// Safari 6.0 has a problem where timers will get lost while the user is
+// scrolling. This problem does not impact ASAP because Safari 6.0 supports
+// mutation observers, so that implementation is used instead.
+// However, if we ever elect to use timers in Safari, the prevalent work-around
+// is to add a scroll event listener that calls for a flush.
+
+// `setTimeout` does not call the passed callback if the delay is less than
+// approximately 7 in web workers in Firefox 8 through 18, and sometimes not
+// even then.
+
+function makeRequestCallFromTimer(callback) {
+    return function requestCall() {
+        // We dispatch a timeout with a specified delay of 0 for engines that
+        // can reliably accommodate that request. This will usually be snapped
+        // to a 4 milisecond delay, but once we're flushing, there's no delay
+        // between events.
+        var timeoutHandle = setTimeout(handleTimer, 0);
+        // However, since this timer gets frequently dropped in Firefox
+        // workers, we enlist an interval handle that will try to fire
+        // an event 20 times per second until it succeeds.
+        var intervalHandle = setInterval(handleTimer, 50);
+
+        function handleTimer() {
+            // Whichever timer succeeds will cancel both timers and
+            // execute the callback.
+            clearTimeout(timeoutHandle);
+            clearInterval(intervalHandle);
+            callback();
+        }
+    };
+}
+
+// This is for `asap.js` only.
+// Its name will be periodically randomized to break any code that depends on
+// its existence.
+rawAsap.makeRequestCallFromTimer = makeRequestCallFromTimer;
+
+// ASAP was originally a nextTick shim included in Q. This was factored out
+// into this ASAP package. It was later adapted to RSVP which made further
+// amendments. These decisions, particularly to marginalize MessageChannel and
+// to capture the MutationObserver implementation in a closure, were integrated
+// back into ASAP proper.
+// https://github.com/tildeio/rsvp.js/blob/cddf7232546a9cf858524b75cde6f9edf72620a7/lib/rsvp/asap.js
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],18:[function(require,module,exports){
+'use strict'
+
+var assert = require('assert-ok')
+var format = require('simple-format')
+var print = require('print-value')
+
+module.exports = function assertEqual (a, b) {
+  assert(a === b, format('expected `%s` to equal `%s`', print(a), print(b)))
+}
+
+},{"assert-ok":20,"print-value":34,"simple-format":38}],19:[function(require,module,exports){
+'use strict'
+
+module.exports = function assertFunction (value) {
+  if (typeof value !== 'function') {
+    throw new TypeError('Expected function, got: ' + value)
+  }
+}
+
+},{}],20:[function(require,module,exports){
+'use strict'
+
+module.exports = function assertOk (value, message) {
+  if (!value) {
+    throw new Error(message || 'Expected true, got ' + value)
+  }
+}
+
+},{}],21:[function(require,module,exports){
+'use strict'
+
+module.exports = CallAll
+
+function CallAll (fns) {
+  fns = Array.isArray(fns) ? fns : arguments
+  return function callAll () {
+    var args = arguments
+    var ret = new Array(fns.length)
+    for (var i = 0, ii = fns.length; i < ii; i++) {
+      ret[i] = fns[i].apply(null, args)
+    }
+    return ret
+  }
+}
+
+},{}],22:[function(require,module,exports){
+/**
+ * cuid.js
+ * Collision-resistant UID generator for browsers and node.
+ * Sequential for fast db lookups and recency sorting.
+ * Safe for element IDs and server-side lookups.
+ *
+ * Extracted from CLCTR
+ *
+ * Copyright (c) Eric Elliott 2012
+ * MIT License
+ */
+
+/*global window, navigator, document, require, process, module */
+(function (app) {
+  'use strict';
+  var namespace = 'cuid',
+    c = 0,
+    blockSize = 4,
+    base = 36,
+    discreteValues = Math.pow(base, blockSize),
+
+    pad = function pad(num, size) {
+      var s = "000000000" + num;
+      return s.substr(s.length-size);
+    },
+
+    randomBlock = function randomBlock() {
+      return pad((Math.random() *
+            discreteValues << 0)
+            .toString(base), blockSize);
+    },
+
+    safeCounter = function () {
+      c = (c < discreteValues) ? c : 0;
+      c++; // this is not subliminal
+      return c - 1;
+    },
+
+    api = function cuid() {
+      // Starting with a lowercase letter makes
+      // it HTML element ID friendly.
+      var letter = 'c', // hard-coded allows for sequential access
+
+        // timestamp
+        // warning: this exposes the exact date and time
+        // that the uid was created.
+        timestamp = (new Date().getTime()).toString(base),
+
+        // Prevent same-machine collisions.
+        counter,
+
+        // A few chars to generate distinct ids for different
+        // clients (so different computers are far less
+        // likely to generate the same id)
+        fingerprint = api.fingerprint(),
+
+        // Grab some more chars from Math.random()
+        random = randomBlock() + randomBlock();
+
+        counter = pad(safeCounter().toString(base), blockSize);
+
+      return  (letter + timestamp + counter + fingerprint + random);
+    };
+
+  api.slug = function slug() {
+    var date = new Date().getTime().toString(36),
+      counter,
+      print = api.fingerprint().slice(0,1) +
+        api.fingerprint().slice(-1),
+      random = randomBlock().slice(-2);
+
+      counter = safeCounter().toString(36).slice(-4);
+
+    return date.slice(-2) +
+      counter + print + random;
+  };
+
+  api.globalCount = function globalCount() {
+    // We want to cache the results of this
+    var cache = (function calc() {
+        var i,
+          count = 0;
+
+        for (i in window) {
+          count++;
+        }
+
+        return count;
+      }());
+
+    api.globalCount = function () { return cache; };
+    return cache;
+  };
+
+  api.fingerprint = function browserPrint() {
+    return pad((navigator.mimeTypes.length +
+      navigator.userAgent.length).toString(36) +
+      api.globalCount().toString(36), 4);
+  };
+
+  // don't change anything from here down.
+  if (app.register) {
+    app.register(namespace, api);
+  } else if (typeof module !== 'undefined') {
+    module.exports = api;
+  } else {
+    app[namespace] = api;
+  }
+
+}(this.applitude || this));
+
+},{}],23:[function(require,module,exports){
+var wrappy = require('wrappy')
+module.exports = wrappy(dezalgo)
+
+var asap = require('asap')
+
+function dezalgo (cb) {
+  var sync = true
+  asap(function () {
+    sync = false
+  })
+
+  return function zalgoSafe() {
+    var args = arguments
+    var me = this
+    if (sync)
+      asap(function() {
+        cb.apply(me, args)
+      })
+    else
+      cb.apply(me, args)
+  }
+}
+
+},{"asap":16,"wrappy":42}],24:[function(require,module,exports){
+'use strict'
+
+var assertFn = require('assert-function')
+
+module.exports = Ear
+
+function Ear () {
+  var callbacks = []
+
+  function listeners () {
+    var args = arguments
+    var i = 0
+    var length = callbacks.length
+    for (; i < length; i++) {
+      var callback = callbacks[i]
+      callback.apply(null, args)
+    }
+  }
+
+  listeners.add = function (listener) {
+    assertFn(listener)
+    callbacks.push(listener)
+    return function remove () {
+      var i = 0
+      var length = callbacks.length
+      for (; i < length; i++) {
+        if (callbacks[i] === listener) {
+          callbacks.splice(i, 1)
+          return
+        }
+      }
+    }
+  }
+
+  return listeners
+}
+
+},{"assert-function":19}],25:[function(require,module,exports){
+(function (global){
+var win;
+
+if (typeof window !== "undefined") {
+    win = window;
+} else if (typeof global !== "undefined") {
+    win = global;
+} else if (typeof self !== "undefined"){
+    win = self;
+} else {
+    win = {};
+}
+
+module.exports = win;
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}],26:[function(require,module,exports){
+'use strict';
+module.exports = function (x) {
+	var type = typeof x;
+	return x !== null && (type === 'object' || type === 'function');
+};
+
+},{}],27:[function(require,module,exports){
+exports = module.exports = stringify
+exports.getSerialize = serializer
+
+function stringify(obj, replacer, spaces, cycleReplacer) {
+  return JSON.stringify(obj, serializer(replacer, cycleReplacer), spaces)
+}
+
+function serializer(replacer, cycleReplacer) {
+  var stack = [], keys = []
+
+  if (cycleReplacer == null) cycleReplacer = function(key, value) {
+    if (stack[0] === value) return "[Circular ~]"
+    return "[Circular ~." + keys.slice(0, stack.indexOf(value)).join(".") + "]"
+  }
+
+  return function(key, value) {
+    if (stack.length > 0) {
+      var thisPos = stack.indexOf(this)
+      ~thisPos ? stack.splice(thisPos + 1) : stack.push(this)
+      ~thisPos ? keys.splice(thisPos, Infinity, key) : keys.push(key)
+      if (~stack.indexOf(value)) value = cycleReplacer.call(this, key, value)
+    }
+    else stack.push(value)
+
+    return replacer == null ? value : replacer.call(this, key, value)
+  }
+}
+
+},{}],28:[function(require,module,exports){
+'use strict'
+
+var assert = require('assert-ok')
+var assertEqual = require('assert-equal')
+var dot = require('dot-prop')
+var toArray = require('to-array')
+var last = require('array-last')
+var dezalgo = require('dezalgo')
+var all = require('call-all-fns')
+
+module.exports = Lazy
+
+function Lazy (methods, load) {
+  assert(Array.isArray(methods), 'methods are required')
+  assertEqual(typeof load, 'function', 'load fn is required')
+
+  var api = null
+  var error = null
+  var queue = []
+
+  load(function (err, lib) {
+    error = err
+    api = lib
+    all(queue)(err, lib)
+    queue = null
+  })
+
+  return methods.reduce(function (lazy, method) {
+    dot.set(lazy, method, Deferred(method))
+    return lazy
+  }, {})
+
+  function Deferred (method) {
+    return function deferred () {
+      var args = arguments
+      onReady(function (err, api) {
+        if (!err) return dot.get(api, method).apply(null, args)
+        var callback = last(toArray(args))
+        if (typeof callback === 'function') {
+          return callback(err)
+        }
+      })
+    }
+  }
+
+  function onReady (callback) {
+    callback = dezalgo(callback)
+
+    if (api || error) return callback(error, api)
+    queue.push(callback)
+  }
+}
+
+},{"array-last":13,"assert-equal":18,"assert-ok":20,"call-all-fns":21,"dezalgo":23,"dot-prop":29,"to-array":41}],29:[function(require,module,exports){
+'use strict';
+var isObj = require('is-obj');
+
+module.exports.get = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return obj;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		obj = obj[pathArr[i]];
+
+		if (obj === undefined) {
+			break;
+		}
+	}
+
+	return obj;
+};
+
+module.exports.set = function (obj, path, value) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		if (!isObj(obj[p])) {
+			obj[p] = {};
+		}
+
+		if (i === pathArr.length - 1) {
+			obj[p] = value;
+		}
+
+		obj = obj[p];
+	}
+};
+
+module.exports.delete = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		if (i === pathArr.length - 1) {
+			delete obj[p];
+			return;
+		}
+
+		obj = obj[p];
+	}
+};
+
+module.exports.has = function (obj, path) {
+	if (!isObj(obj) || typeof path !== 'string') {
+		return false;
+	}
+
+	var pathArr = getPathSegments(path);
+
+	for (var i = 0; i < pathArr.length; i++) {
+		obj = obj[pathArr[i]];
+
+		if (obj === undefined) {
+			return false;
+		}
+	}
+
+	return true;
+};
+
+function getPathSegments(path) {
+	var pathArr = path.split('.');
+	var parts = [];
+
+	for (var i = 0; i < pathArr.length; i++) {
+		var p = pathArr[i];
+
+		while (p[p.length - 1] === '\\') {
+			p = p.slice(0, -1) + '.';
+			p += pathArr[++i];
+		}
+
+		parts.push(p);
+	}
+
+	return parts;
+}
+
+},{"is-obj":26}],30:[function(require,module,exports){
+'use strict'
+
+var load = require('load-script')
+var window = require('global/window')
+var extend = require('xtend')
+var assert = require('assert-ok')
+var dezalgo = require('dezalgo')
+var Listeners = require('ear')
+var extendQuery = require('query-extend')
+var cuid = require('cuid')
+
+module.exports = loadGlobal
+
+var listeners = {}
+
+function loadGlobal (options, callback) {
+  assert(options, 'options required')
+  assert(options.url, 'url required')
+  assert(options.global, 'global required')
+  assert(callback, 'callback required')
+
+  options = extend(options)
+  callback = dezalgo(callback)
+
+  if (getGlobal(options)) {
+    return callback(null, getGlobal(options))
+  }
+
+  callback = cache(options, callback)
+  if (!callback) return
+
+  if (options.jsonp) {
+    var id = jsonpCallback(options, callback)
+    options.url = extendQuery(options.url, {callback: id})
+  }
+
+  load(options.url, options, function (err) {
+    if (err) return callback(err)
+    if (!options.jsonp) {
+      var library = getGlobal(options)
+      if (!library) return callback(new Error('expected: `window.' + options.global + '`, actual: `' + library + '`'))
+      callback(null, library)
+    }
+  })
+}
+
+function cache (options, callback) {
+  if (!get()) {
+    set(Listeners())
+    get().add(callback)
+    return function onComplete (err, lib) {
+      get()(err, lib)
+      set(Listeners())
+    }
+  }
+
+  get().add(callback)
+  return undefined
+
+  function get () {
+    return listeners[options.global]
+  }
+
+  function set (value) {
+    listeners[options.global] = value
+  }
+}
+
+function getGlobal (options) {
+  return window[options.global]
+}
+
+function jsonpCallback (options, callback) {
+  var id = cuid()
+  window[id] = function jsonpCallback () {
+    callback(null, getGlobal(options))
+    delete window[id]
+  }
+  return id
+}
+
+},{"assert-ok":20,"cuid":22,"dezalgo":23,"ear":24,"global/window":25,"load-script":31,"query-extend":37,"xtend":43}],31:[function(require,module,exports){
+
+module.exports = function load (src, opts, cb) {
+  var head = document.head || document.getElementsByTagName('head')[0]
+  var script = document.createElement('script')
+
+  if (typeof opts === 'function') {
+    cb = opts
+    opts = {}
+  }
+
+  opts = opts || {}
+  cb = cb || function() {}
+
+  script.type = opts.type || 'text/javascript'
+  script.charset = opts.charset || 'utf8';
+  script.async = 'async' in opts ? !!opts.async : true
+  script.src = src
+
+  if (opts.attrs) {
+    setAttributes(script, opts.attrs)
+  }
+
+  if (opts.text) {
+    script.text = '' + opts.text
+  }
+
+  var onend = 'onload' in script ? stdOnEnd : ieOnEnd
+  onend(script, cb)
+
+  // some good legacy browsers (firefox) fail the 'in' detection above
+  // so as a fallback we always set onload
+  // old IE will ignore this and new IE will set onload
+  if (!script.onload) {
+    stdOnEnd(script, cb);
+  }
+
+  head.appendChild(script)
+}
+
+function setAttributes(script, attrs) {
+  for (var attr in attrs) {
+    script.setAttribute(attr, attrs[attr]);
+  }
+}
+
+function stdOnEnd (script, cb) {
+  script.onload = function () {
+    this.onerror = this.onload = null
+    cb(null, script)
+  }
+  script.onerror = function () {
+    // this.onload = null here is necessary
+    // because even IE9 works not like others
+    this.onerror = this.onload = null
+    cb(new Error('Failed to load ' + this.src), script)
+  }
+}
+
+function ieOnEnd (script, cb) {
+  script.onreadystatechange = function () {
+    if (this.readyState != 'complete' && this.readyState != 'loaded') return
+    this.onreadystatechange = null
+    cb(null, script) // there is no way to catch loading errors in IE8
+  }
+}
+
+},{}],32:[function(require,module,exports){
 (function(root, factory) {
 if (typeof exports === "object") {
 module.exports = factory(require('angular'));
@@ -42844,7 +44091,383 @@ angular.module('ngMap', []);
 
 return 'ngMap';
 }));
-},{"angular":5}],7:[function(require,module,exports){
+},{"angular":12}],33:[function(require,module,exports){
+'use strict';
+
+module.exports = function split(str) {
+    var a = 1,
+        res = '';
+
+    var parts = str.split('%'),
+        len = parts.length;
+
+    if (len > 0) { res += parts[0]; }
+
+    for (var i = 1; i < len; i++) {
+        if (parts[i][0] === 's' || parts[i][0] === 'd') {
+            var value = arguments[a++];
+            res += parts[i][0] === 'd' ? Math.floor(value) : value;
+        } else if (parts[i][0]) {
+            res += '%' + parts[i][0];
+        } else {
+            i++;
+            res += '%' + parts[i][0];
+        }
+
+        res += parts[i].substring(1);
+    }
+
+    return res;
+};
+
+},{}],34:[function(require,module,exports){
+'use strict'
+
+var isObject = require('isobject')
+var safeStringify = require('json-stringify-safe')
+
+module.exports = function print (value) {
+  var toString = isJson(value) ? stringify : String
+  return toString(value)
+}
+
+function isJson (value) {
+  return isObject(value) || Array.isArray(value)
+}
+
+function stringify (value) {
+  return safeStringify(value, null, '')
+}
+
+},{"isobject":36,"json-stringify-safe":27}],35:[function(require,module,exports){
+module.exports = Array.isArray || function (arr) {
+  return Object.prototype.toString.call(arr) == '[object Array]';
+};
+
+},{}],36:[function(require,module,exports){
+/*!
+ * isobject <https://github.com/jonschlinkert/isobject>
+ *
+ * Copyright (c) 2014-2015, Jon Schlinkert.
+ * Licensed under the MIT License.
+ */
+
+'use strict';
+
+var isArray = require('isarray');
+
+module.exports = function isObject(o) {
+  return o != null && typeof o === 'object' && !isArray(o);
+};
+
+},{"isarray":35}],37:[function(require,module,exports){
+!function(glob) {
+
+  var queryToObject = function(query) {
+    var obj = {};
+    if (!query) return obj;
+    each(query.split('&'), function(val) {
+      var pieces = val.split('=');
+      var key = parseKey(pieces[0]);
+      var keyDecoded = decodeURIComponent(key.val);
+      var valDecoded = pieces[1] && decodeURIComponent(pieces[1]);
+
+      if (key.type === 'array') {
+        if (!obj[keyDecoded]) obj[keyDecoded] = [];
+        obj[keyDecoded].push(valDecoded);
+      } else if (key.type === 'string') {
+        obj[keyDecoded] = valDecoded;
+      }
+    });
+    return obj;
+  };
+
+  var objectToQuery = function(obj) {
+    var pieces = [], encodedKey;
+    for (var k in obj) {
+      if (!obj.hasOwnProperty(k)) continue;
+      if (typeof obj[k] === 'undefined') {
+        pieces.push(encodeURIComponent(k));
+        continue;
+      }
+      encodedKey = encodeURIComponent(k);
+      if (isArray(obj[k])) {
+        each(obj[k], function(val) {
+          pieces.push(encodedKey + '[]=' + encodeURIComponent(val));
+        });
+        continue;
+      }
+      pieces.push(encodedKey + '=' + encodeURIComponent(obj[k]));
+    }
+    return pieces.length ? ('?' + pieces.join('&')) : '';
+  };
+
+  // for now we will only support string and arrays
+  var parseKey = function(key) {
+    var pos = key.indexOf('[');
+    if (pos === -1) return { type: 'string', val: key };
+    return { type: 'array', val: key.substr(0, pos) };
+  };
+
+  var isArray = function(val) {
+    return Object.prototype.toString.call(val) === '[object Array]';
+  };
+
+  var extract = function(url) {
+    var pos = url.lastIndexOf('?');
+    var hasQuery = pos !== -1;
+    var base = void 0;
+
+    if (hasQuery && pos > 0) {
+      base = url.substring(0, pos);
+    } else if (!hasQuery && (url && url.length > 0)) {
+      base = url;
+    }
+
+    return {
+      base: base,
+      query: hasQuery ? url.substring(pos+1) : void 0
+    };
+  };
+
+  // thanks raynos!
+  // https://github.com/Raynos/xtend
+  var extend = function() {
+    var target = {};
+    for (var i = 0; i < arguments.length; i++) {
+      var source = arguments[i];
+      for (var key in source) {
+        if (source.hasOwnProperty(key)) {
+          target[key] = source[key];
+        }
+      }
+    }
+    return target;
+  };
+
+  var queryExtend = function() {
+    var args = Array.prototype.slice.call(arguments, 0);
+    var asObject = args[args.length-1] === true;
+    var base = '';
+
+    if (!args.length) {
+      return base;
+    }
+
+    if (asObject) {
+      args.pop();
+    }
+
+    var normalized = map(args, function(param) {
+      if (typeof param === 'string') {
+        var extracted = extract(param);
+        if (extracted.base) base = extracted.base;
+        return queryToObject(extracted.query);
+      }
+      return param;
+    });
+
+    if (asObject) {
+      return extend.apply({}, normalized);
+    } else {
+      return base + objectToQuery(extend.apply({}, normalized));
+    }
+
+  };
+    
+  var each = function(arr, fn) {
+    for (var i = 0, l = arr.length; i < l; i++) {
+      fn(arr[i], i);
+    }
+  };
+
+  var map = function(arr, fn) {
+    var res = [];
+    for (var i = 0, l = arr.length; i < l; i++) {
+      res.push( fn(arr[i], i) );
+    } 
+    return res;     
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    // Node.js / browserify
+    module.exports = queryExtend;
+  } else if  (typeof define === 'function' && define.amd) {
+    // require.js / AMD
+    define(function() {
+      return queryExtend;
+    });
+  } else {
+    // <script>
+    glob.queryExtend = queryExtend;
+  }
+
+}(this);
+},{}],38:[function(require,module,exports){
+'use strict'
+
+var printf = require('pff')
+var toArray = require('to-array')
+var regex = /%[sdj]/
+
+module.exports = function format (message) {
+  if (regex.test(message)) return printf.apply(null, arguments)
+  return toArray(arguments).join(' ')
+}
+
+},{"pff":33,"to-array":41}],39:[function(require,module,exports){
+'use strict'
+
+var assign = require('xtend/mutable')
+var dot = require('dot-prop')
+
+var methods = stripeErrback.methods = {
+  async: [
+    'card.createToken',
+    'bankAccount.createToken',
+    'piiData.createToken',
+    'bitcoinReceiver.createReceiver',
+    'bitcoinReceiver.pollReceiver',
+    'bitcoinReceiver.getReceiver'
+  ],
+  sync: [
+    'setPublishableKey',
+    'card.validateCardNumber',
+    'card.validateExpiry',
+    'card.validateCVC',
+    'card.cardType',
+    'bankAccount.validateRoutingNumber',
+    'bankAccount.validateAccountNumber',
+    'bitcoinReceiver.cancelReceiverPoll'
+  ]
+}
+
+module.exports = stripeErrback
+
+function stripeErrback (Stripe) {
+  if (typeof Stripe !== 'function') throw new Error('Stripe.js must be provided')
+
+  var stripe = {}
+
+  methods.async.forEach(function (method) {
+    var names = method.split('.')
+    var receiverName = names[0]
+    var methodName = names[1]
+    dot.set(stripe, method, toErrback(methodName, Stripe[receiverName]))
+  })
+
+  methods.sync.forEach(function (method) {
+    dot.set(stripe, method, dot.get(Stripe, method))
+  })
+
+  return stripe
+}
+
+function toErrback (method, receiver) {
+  return function errback () {
+    var args = Array.prototype.slice.call(arguments)
+    var callback = args.pop()
+
+    receiver[method].apply(receiver, args.concat(function onStripe (status, response) {
+      if (response.error) return callback(assign(new Error(), response.error, {status: status}))
+      callback(null, response)
+    }))
+  }
+}
+
+},{"dot-prop":40,"xtend/mutable":44}],40:[function(require,module,exports){
+arguments[4][4][0].apply(exports,arguments)
+},{"dup":4,"is-obj":26}],41:[function(require,module,exports){
+module.exports = toArray
+
+function toArray(list, index) {
+    var array = []
+
+    index = index || 0
+
+    for (var i = index || 0; i < list.length; i++) {
+        array[i - index] = list[i]
+    }
+
+    return array
+}
+
+},{}],42:[function(require,module,exports){
+// Returns a wrapper function that returns a wrapped callback
+// The wrapper function should do some stuff, and return a
+// presumably different callback function.
+// This makes sure that own properties are retained, so that
+// decorations and such are not lost along the way.
+module.exports = wrappy
+function wrappy (fn, cb) {
+  if (fn && cb) return wrappy(fn)(cb)
+
+  if (typeof fn !== 'function')
+    throw new TypeError('need wrapper function')
+
+  Object.keys(fn).forEach(function (k) {
+    wrapper[k] = fn[k]
+  })
+
+  return wrapper
+
+  function wrapper() {
+    var args = new Array(arguments.length)
+    for (var i = 0; i < args.length; i++) {
+      args[i] = arguments[i]
+    }
+    var ret = fn.apply(this, args)
+    var cb = args[args.length-1]
+    if (typeof ret === 'function' && ret !== cb) {
+      Object.keys(cb).forEach(function (k) {
+        ret[k] = cb[k]
+      })
+    }
+    return ret
+  }
+}
+
+},{}],43:[function(require,module,exports){
+module.exports = extend
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function extend() {
+    var target = {}
+
+    for (var i = 0; i < arguments.length; i++) {
+        var source = arguments[i]
+
+        for (var key in source) {
+            if (hasOwnProperty.call(source, key)) {
+                target[key] = source[key]
+            }
+        }
+    }
+
+    return target
+}
+
+},{}],44:[function(require,module,exports){
+module.exports = extend
+
+var hasOwnProperty = Object.prototype.hasOwnProperty;
+
+function extend(target) {
+    for (var i = 1; i < arguments.length; i++) {
+        var source = arguments[i]
+
+        for (var key in source) {
+            if (hasOwnProperty.call(source, key)) {
+                target[key] = source[key]
+            }
+        }
+    }
+
+    return target
+}
+
+},{}],45:[function(require,module,exports){
 'use strict';
 
 var _angular = require('angular');
@@ -42864,6 +44487,8 @@ var _app5 = require('./config/app.run');
 var _app6 = _interopRequireDefault(_app5);
 
 require('ngmap');
+
+require('angular-stripe');
 
 var _angularToastr = require('angular-toastr');
 
@@ -42897,21 +44522,21 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 // Create and bootstrap application
 
-// import './article';
+//import './article';
 
-// Import our app functionaity
+//Import our app functionaity
 
 //import 'passport-facebook';
-var requires = ['ngMap', 'ui.router', 'templates', 'app.layout', 'app.components', 'app.home', 'app.contact', 'app.list',
-// 'app.article',
-'app.services', 'app.auth', 'app.settings', 'app.profile', 'app.editor', 'toastr'];
-
-// Mount on window for testing
-
-// Import our templates file (generated by Gulp)
 
 
 // Import our app config files
+var requires = ['ngMap', 'ui.router', 'templates', 'app.layout', 'app.components', 'app.home', 'app.contact', 'app.list',
+//'app.article',
+'app.services', 'app.auth', 'app.settings', 'app.profile', 'app.editor', 'angular-stripe', 'toastr'];
+
+// Mount on window for testing
+
+//Import our templates file (generated by Gulp)
 window.app = _angular2.default.module('app', requires);
 
 _angular2.default.module('app').constant('AppConstants', _app2.default);
@@ -42922,7 +44547,7 @@ _angular2.default.bootstrap(document, ['app'], {
   strictDi: true
 });
 
-},{"./auth":10,"./components":17,"./config/app.config":20,"./config/app.constants":21,"./config/app.run":22,"./config/app.templates":23,"./contact":27,"./editor":30,"./home":33,"./layout":36,"./list":37,"./profile":41,"./services":49,"./settings":54,"angular":5,"angular-toastr":2,"angular-ui-router":3,"ngmap":6}],8:[function(require,module,exports){
+},{"./auth":48,"./components":56,"./config/app.config":59,"./config/app.constants":60,"./config/app.run":61,"./config/app.templates":62,"./contact":66,"./editor":69,"./home":72,"./layout":75,"./list":76,"./profile":80,"./services":88,"./settings":93,"angular":12,"angular-stripe":5,"angular-toastr":9,"angular-ui-router":10,"ngmap":32}],46:[function(require,module,exports){
 'use strict';
 
 AuthConfig.$inject = ["$stateProvider", "$httpProvider"];
@@ -42952,10 +44577,9 @@ function AuthConfig($stateProvider, $httpProvider) {
         return User.ensureAuthIs(false);
       }]
     }
-  }).state('app.facebook', {
-    url: '/register',
-    controller: 'AuthCtrl as $ctrl',
-    title: 'Sign up',
+  }).state('app.social', {
+    url: '/social',
+    controller: 'SocialCtrl as $crtl',
     resolve: {
       auth: ["User", function auth(User) {
         return User.ensureAuthIs(false);
@@ -42966,7 +44590,7 @@ function AuthConfig($stateProvider, $httpProvider) {
 
 exports.default = AuthConfig;
 
-},{}],9:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43019,7 +44643,7 @@ var AuthCtrl = function () {
 
 exports.default = AuthCtrl;
 
-},{}],10:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43038,6 +44662,10 @@ var _auth3 = require('./auth.controller');
 
 var _auth4 = _interopRequireDefault(_auth3);
 
+var _social = require('./social.controller');
+
+var _social2 = _interopRequireDefault(_social);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
 // Create the module where our functionality can attach to
@@ -43051,9 +44679,41 @@ authModule.config(_auth2.default);
 
 authModule.controller('AuthCtrl', _auth4.default);
 
+authModule.controller('SocialCtrl', _social2.default);
+
 exports.default = authModule;
 
-},{"./auth.config":8,"./auth.controller":9,"angular":5}],11:[function(require,module,exports){
+},{"./auth.config":46,"./auth.controller":47,"./social.controller":49,"angular":12}],49:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+    value: true
+});
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var SocialCtrl = function SocialCtrl(User, $state) {
+    'ngInject';
+
+    var _this = this;
+
+    _classCallCheck(this, SocialCtrl);
+
+    this._User = User;
+    this._$state = $state;
+    this.authType = $state.current.name.replace('app.', '');
+
+    this._User.attemptAuth(this.authType, null).then(function (res) {
+        _this._$state.go('app.home');
+    }, function (err) {
+        _this._$state.go('app.login');
+    });
+};
+SocialCtrl.$inject = ["User", "$state"];
+
+exports.default = SocialCtrl;
+
+},{}],50:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43174,7 +44834,7 @@ var ArticleList = {
 
 exports.default = ArticleList;
 
-},{}],12:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43190,7 +44850,7 @@ var ArticleMeta = {
 
 exports.default = ArticleMeta;
 
-},{}],13:[function(require,module,exports){
+},{}],52:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43205,7 +44865,7 @@ var ArticlePreview = {
 
 exports.default = ArticlePreview;
 
-},{}],14:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43256,7 +44916,7 @@ var ListPagination = {
 
 exports.default = ListPagination;
 
-},{}],15:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43321,7 +44981,7 @@ var FavoriteBtn = {
 
 exports.default = FavoriteBtn;
 
-},{}],16:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43385,7 +45045,7 @@ var FollowBtn = {
 
 exports.default = FollowBtn;
 
-},{}],17:[function(require,module,exports){
+},{}],56:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43450,7 +45110,7 @@ componentsModule.component('listPagination', _listPagination2.default);
 
 exports.default = componentsModule;
 
-},{"./article-helpers/article-list.component":11,"./article-helpers/article-meta.component":12,"./article-helpers/article-preview.component":13,"./article-helpers/list-pagination.component":14,"./buttons/favorite-btn.component":15,"./buttons/follow-btn.component":16,"./list-errors.component":18,"./show-authed.directive":19,"angular":5}],18:[function(require,module,exports){
+},{"./article-helpers/article-list.component":50,"./article-helpers/article-meta.component":51,"./article-helpers/article-preview.component":52,"./article-helpers/list-pagination.component":53,"./buttons/favorite-btn.component":54,"./buttons/follow-btn.component":55,"./list-errors.component":57,"./show-authed.directive":58,"angular":12}],57:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43465,7 +45125,7 @@ var ListErrors = {
 
 exports.default = ListErrors;
 
-},{}],19:[function(require,module,exports){
+},{}],58:[function(require,module,exports){
 'use strict';
 
 ShowAuthed.$inject = ["User"];
@@ -43502,7 +45162,7 @@ function ShowAuthed(User) {
 
 exports.default = ShowAuthed;
 
-},{}],20:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 'use strict';
 
 AppConfig.$inject = ["$httpProvider", "$stateProvider", "$locationProvider", "$urlRouterProvider"];
@@ -43539,7 +45199,7 @@ function AppConfig($httpProvider, $stateProvider, $locationProvider, $urlRouterP
 
 exports.default = AppConfig;
 
-},{"./auth.interceptor":24}],21:[function(require,module,exports){
+},{"./auth.interceptor":63}],60:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43557,7 +45217,7 @@ var AppConstants = {
 
 exports.default = AppConstants;
 
-},{}],22:[function(require,module,exports){
+},{}],61:[function(require,module,exports){
 'use strict';
 
 AppRun.$inject = ["AppConstants", "$rootScope"];
@@ -43586,19 +45246,19 @@ function AppRun(AppConstants, $rootScope) {
 
 exports.default = AppRun;
 
-},{}],23:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 "use strict";
 
 angular.module("templates", []).run(["$templateCache", function ($templateCache) {
-  $templateCache.put("components/list-errors.html", "<ul class=\"error-messages\" ng-show=\"$ctrl.errors\">\n  <div ng-repeat=\"(field, errors) in $ctrl.errors\">\n    <li ng-repeat=\"error in errors\">\n      {{field}} {{error}}\n    </li>\n  </div>\n</ul>\n");
   $templateCache.put("auth/auth.html", "<div class=\"auth-page\">\n  <div class=\"container page\">\n    <div class=\"row\" style=\"text-align:center!important;\">\n\n      <div class=\"col-md-6 offset-md-3 col-xs-12\">\n        <h1 class=\"text-xs-center\" ng-bind=\"::$ctrl.title\"></h1>\n        <p class=\"text-xs-center\">\n          <a ui-sref=\"app.login\"\n            ng-show=\"$ctrl.authType === \'register\'\">\n            Have an account?\n          </a>\n          <a ui-sref=\"app.register\"\n            ng-show=\"$ctrl.authType === \'login\'\">\n            Need an account?\n          </a>\n        </p>\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form ng-submit=\"$ctrl.submitForm()\">\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"control-group\" ng-show=\"$ctrl.authType === \'register\'\">\n              <input class=\"form-control form-control-lg\"\n                type=\"text\"\n                placeholder=\"Username\"\n                ng-model=\"$ctrl.formData.username\" />\n            </fieldset>\n\n            <fieldset class=\"control-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"email\"\n                placeholder=\"Email\"\n                ng-model=\"$ctrl.formData.email\" />\n            </fieldset>\n\n            <fieldset class=\"control-group\">\n              <input class=\"form-control form-control-lg\"\n                type=\"password\"\n                placeholder=\"Password\"\n                ng-model=\"$ctrl.formData.password\" />\n            </fieldset>\n\n\n            <button class=\"btn btn-lg btn-primary pull-xs-right\"\n              type=\"submit\"\n              ng-bind=\"::$ctrl.title\">\n            </button>\n            <a target=\"_self\" href=\"http://localhost:8080/api/facebook\">Facebook</a>\n          </fieldset>\n        </form>\n      </div>\n    <li class=\"nav-item\">\n      <a ui-sref-active=\"active\" ui-sref=\"app.register\" style=\"color:red!important;\">Twitter</a>\n  </li>\n    </div>\n  </div>\n</div>\n");
+  $templateCache.put("components/list-errors.html", "<ul class=\"error-messages\" ng-show=\"$ctrl.errors\">\n  <div ng-repeat=\"(field, errors) in $ctrl.errors\">\n    <li ng-repeat=\"error in errors\">\n      {{field}} {{error}}\n    </li>\n  </div>\n</ul>\n");
   $templateCache.put("contact/contact.html", "<br><br>\n<script src=\"js/contact/bootstrap-button.js\"></script>\n<!-- <script src=\"frontend//bootstrap-button.js\"></script> -->\n<div class=\"container\">\n    <form id=\"contact_form\" name=\"contact_form\" class=\"form-contact\">\n        <br>\n        <h2 class=\"form-contact-heading\">Contacto</h2>\n\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputName\" type=\"text\" id=\"inputName\" name=\"inputName\" placeholder=\"Nombre\" class=\"input-block-level\" dir=\"auto\" maxlength=\"100\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputName.$error.required && (contact_form.inputName.$dirty || contact_form.inputName.$touched)\">El campo es obligatorio</span>\n        </div>\n        <div class=\"control-group\">\n            <input required ng-model=\"scope.inputEmail\" type=\"email\" id=\"inputEmail\" name=\"inputEmail\" placeholder=\"Email *\" class=\"input-block-level\" maxlength=\"100\" ng-pattern=\"/^[a-z0-9!#$%&\'*+/=?^_`{|}~.-]+@[a-z0-9-]+(\\.[a-z0-9-]+)*$/i\">\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.required && (contact_form.inputEmail.$dirty || contact_form.inputEmail.$touched)\">El campo es obligatorio</span>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputEmail.$error.email\">Email no valido</span>\n        </div>\n        <div class=\"control-group\">\n            <label class=\"cmbConsulta\" for=\"sel1\">Tema de Consulta</label>\n            <select ng-model=\"scope.inputSubject\" class=\"form-control\" id=\"inputSubject\" name=\"inputSubject\" title=\"Choose subject\">\n                <option value=\"\">- Por favor, seleccione un tema de consulta -</option>\n                <option value=\"actividad\">Info relativa a alguna actividad</option>\n                <option value=\"dpto\">Contacta con nuestro dpto de actividades</option>\n                <option value=\"trabaja\">Trabaja con nosotros</option>\n                <option value=\"sugerencias\">Haznos sugerencias</option>\n                <option value=\"reclamaciones\">Atendemos tus reclamaciones</option>\n                <option value=\"novedades\">Te avisamos de nuestras novedades</option>\n                <option value=\"diferente\">Algo diferente</option>\n            </select>\n        </div>\n        <div class=\"control-group\">\n            <textarea required ng-model=\"scope.inputMessage\" class=\"input-block-level\" rows=\"4\" id=\"inputMessage\" name=\"inputMessage\" placeholder=\"Introduzca aqui su mensaje *\" style=\"max-width: 100%;\" dir=\"auto\"></textarea>\n            <span class=\"text-danger\" ng-show=\"contact_form.inputMessage.$error.required && (contact_form.inputMessage.$dirty || contact_form.inputMessage.$touched)\">El campo es obligatorio</span>\n        </div>\n\n        <input type=\"hidden\" name=\"token\" value=\"contact_form\" />\n        \n        <input class=\"btn btn-primary\" type=\"submit\" name=\"submit\" id=\"submitBtn\" value=\"Enviar\" \n        ng-show=\"contact_form.inputName.$valid && contact_form.inputEmail.$valid && contact_form.inputMessage.$valid\" \n        ng-click=\"scope.SubmitContact()\"/>\n\n        \n        <div id=\"resultMessage\" ng-class=\"class\">{{message}}</div>\n    </form>\n</div> ");
   $templateCache.put("editor/editor.html", "<div class=\"editor-page\">\n  <div class=\"container page\">\n    <div class=\"row\">\n      <div class=\"col-md-10 offset-md-1 col-xs-12\">\n\n        <list-errors errors=\"$ctrl.errors\"></list-errors>\n\n        <form>\n          <fieldset ng-disabled=\"$ctrl.isSubmitting\">\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control form-control-lg\"\n                ng-model=\"$ctrl.article.title\"\n                type=\"text\"\n                placeholder=\"Article Title\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                ng-model=\"$ctrl.article.description\"\n                type=\"text\"\n                placeholder=\"What\'s this article about?\" />\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <textarea class=\"form-control\"\n                rows=\"8\"\n                ng-model=\"$ctrl.article.body\"\n                placeholder=\"Write your article (in markdown)\">\n              </textarea>\n            </fieldset>\n\n            <fieldset class=\"form-group\">\n              <input class=\"form-control\"\n                type=\"text\"\n                placeholder=\"Enter tags\"\n                ng-model=\"$ctrl.tagField\"\n                ng-keyup=\"$event.keyCode == 13 && $ctrl.addTag()\" />\n\n              <div class=\"tag-list\">\n                <span ng-repeat=\"tag in $ctrl.article.tagList\"\n                  class=\"tag-default tag-pill\">\n                  <i class=\"ion-close-round\" ng-click=\"$ctrl.removeTag(tag)\"></i>\n                  {{ tag }}\n                </span>\n              </div>\n            </fieldset>\n\n            <button class=\"btn btn-lg pull-xs-right btn-primary\" type=\"button\" ng-click=\"$ctrl.submit()\">\n              Publish Article\n            </button>\n\n          </fieldset>\n        </form>\n\n      </div>\n    </div>\n  </div>\n</div>\n");
-  $templateCache.put("home/home.html", "<!-- Banner -->\n<section id=\"banner\">\n	<div class=\"inner\">\n		<h2>Spectral</h2>\n		<ul class=\"actions\">\n			<li><a href=\"#/\" class=\"button special\">Activate</a></li>\n		</ul>\n	</div>\n	<a href=\"#products\" class=\"more scrolly\">Componentes</a>\n</section>\n\n<!-- One -->\n<section id=\"one\" class=\"wrapper style1 special\">\n	<div class=\"inner\">\n		<input type=\"text\" name=\"\" ng-model=\"keywords\" id=\"\" placeholder=\"Search your favorite products\">\n		<input type=\"button\" class=\"button fit\" ng-click=\"search()\" value=\"Search\">\n	</div>\n</section>\n\n<!-- Three -->\n<section id=\"three\" class=\"wrapper style3 special\">\n	<div class=\"inner\">\n		<h1>Categorias</h1>\n		<ul class=\"features\">\n			<li><a ui-sref=\"app.list({type:\'processadores\'})\">\n				<h1>Procesadores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'PlacaBase\'})\">\n				<h1>Placas Base</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'discdur\'})\">\n				<h1>Discos Duros</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'tarjetaGrafica\'})\">\n				<h1>Gráficas</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ram\'})\">\n				<h1>Memoria RAM</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'Teclado\'})\">\n				<h1>Teclado</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'disquetera\'})\">\n				<h1>Disqueteras</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'multilectores\'})\">\n				<h1>Multilectores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'sonido\'})\">\n				<h1>Sonido</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'torres\'})\">\n				<h1>Torres</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ventilacion\'})\">\n				<h1>Ventilación</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'fuentes\'})\">\n				<h1>Fuentes</h1>\n			</a></li>\n		</ul>\n	</div>\n</section>\n\n\n\n<!-- Two -->\n<section id=\"two\" class=\"wrapper alt style2\">\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Magna primis lobortis<br />\n			sed ullamcorper</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Tortor dolore feugiat<br />\n			elementum magna</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Augue eleifend aliquet<br />\n			sed condimentum</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n</section>\n\n\n\n<!-- CTA -->\n<section id=\"cta\" class=\"wrapper style4\">\n	<div class=\"inner\">\n		<header>\n			<h2>Arcue ut vel commodo</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum endrerit imperdiet amet eleifend fringilla.</p>\n		</header>\n		<ul class=\"actions vertical\">\n			<li><a href=\"#\" class=\"button fit special\">Activate</a></li>\n			<li><a href=\"#\" class=\"button fit\">Learn More</a></li>\n		</ul>\n	</div>\n</section>");
+  $templateCache.put("home/home.html", "<!-- Banner -->\n<section id=\"banner\">\n	<div class=\"inner\">\n		<h2>Spectral</h2>\n		<ul class=\"actions\">\n			<li><a href=\"#/\" class=\"button special\">Activate</a></li>\n		</ul>\n	</div>\n	<a href=\"#products\" class=\"more scrolly\">Componentes</a>\n</section>\n\n<!-- One -->\n<section id=\"one\" class=\"wrapper style1 special\">\n	<div class=\"inner\">\n		<input type=\"text\" name=\"\" ng-model=\"keywords\" id=\"\" placeholder=\"Search your favorite products\">\n		<input type=\"button\" class=\"button fit\" ng-click=\"search()\" value=\"Search\">\n	</div>\n</section>\n\n<!-- Three -->\n<section id=\"three\" class=\"wrapper style3 special\">\n	<div class=\"inner\">\n		<h1>Categorias</h1>\n		<ul class=\"features\">\n			<li><a ui-sref=\"app.list({type:\'processadores\'})\">\n				<h1>Procesadores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'placaBase\'})\">\n				<h1>Placas Base</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'discoDuro\'})\">\n				<h1>Discos Duros</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'tarjetaGrafica\'})\">\n				<h1>Gráficas</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ram\'})\">\n				<h1>Memoria RAM</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'teclado\'})\">\n				<h1>Teclado</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'disquetera\'})\">\n				<h1>Disqueteras</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'multilectores\'})\">\n				<h1>Multilectores</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'sonido\'})\">\n				<h1>Sonido</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'torres\'})\">\n				<h1>Torres</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'ventilacion\'})\">\n				<h1>Ventilación</h1>\n			</a></li>\n			<li><a ui-sref=\"app.list({type: \'fuentes\'})\">\n				<h1>Fuentes</h1>\n			</a></li>\n		</ul>\n	</div>\n</section>\n\n\n\n<!-- Two -->\n<section id=\"two\" class=\"wrapper alt style2\">\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Magna primis lobortis<br />\n			sed ullamcorper</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Tortor dolore feugiat<br />\n			elementum magna</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n	<section class=\"spotlight\">\n		<div class=\"image\"></div><div class=\"content\">\n			<h2>Augue eleifend aliquet<br />\n			sed condimentum</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum. Donec hendrerit imperdiet. Mauris eleifend fringilla nullam aenean mi ligula.</p>\n		</div>\n	</section>\n</section>\n\n\n\n<!-- CTA -->\n<section id=\"cta\" class=\"wrapper style4\">\n	<div class=\"inner\">\n		<header>\n			<h2>Arcue ut vel commodo</h2>\n			<p>Aliquam ut ex ut augue consectetur interdum endrerit imperdiet amet eleifend fringilla.</p>\n		</header>\n		<ul class=\"actions vertical\">\n			<li><a href=\"#\" class=\"button fit special\">Activate</a></li>\n			<li><a href=\"#\" class=\"button fit\">Learn More</a></li>\n		</ul>\n	</div>\n</section>");
   $templateCache.put("layout/app-view.html", "<app-header></app-header>\n\n<div ui-view></div>\n\n<app-footer></app-footer>\n");
   $templateCache.put("layout/footer.html", "<div>\n  <footer id=\"footer\">\n      <ul class=\"icons\">\n          <li><a href=\"#/\" class=\"icon fa-twitter\"><span class=\"label\">Twitter</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-facebook\"><span class=\"label\">Facebook</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-instagram\"><span class=\"label\">Instagram</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-dribbble\"><span class=\"label\">Dribbble</span></a></li>\n          <li><a href=\"#/\" class=\"icon fa-envelope-o\"><span class=\"label\">Email</span></a></li>\n      </ul>\n      <ul class=\"copyright\">\n          <li>&copy; Untitled</li><li>Design: <a href=\"http://html5up.net\">HTML5 UP</a></li>\n      </ul>\n  </footer>\n</div>");
   $templateCache.put("layout/header.html", "    <!-- Header -->\n    <div>\n      <header id=\"header\" class=\"alt\">\n          <h1><a ui-sref=\"app.home\">Spectral</a></h1>\n          <nav id=\"nav\" > \n            <ul show-authed=\"false\" class=\"nav navbar-nav pull-xs-right\">\n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.contact\"><span>Contact</span></a>\n                </li>      \n           \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.home\" ><span>Home</span></a>\n                </li>\n                  \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.list\"><span>Ofertas</span></a>\n                </li>\n                \n                <li class=\"nav-item\">\n                    <a ui-sref-active=\"active\" ui-sref=\"app.register\" style=\"color:red!important;\">Sign Up</a>\n                </li>\n\n                <li class=\"nav-item\">\n                    <a ui-sref-active=\"active\" ui-sref=\"app.login\" style=\"color:red!important;\">Log in</a>\n                </li>\n            </ul>\n               \n            <ul show-authed=\"true\" class=\"nav navbar-nav pull-xs-right\">\n            \n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.contact\"><span>Contact</span></a>\n                </li>   \n\n                <li class=\"nav-item\">\n                    <a class=\"nav-link\" ui-sref-active=\"active\" ui-sref=\"app.home\"> Home</a>\n                </li>\n\n                <li class=\"nav-item\">\n                    <a  ui-sref-active=\"active\" ui-sref=\"app.list\"><span>Ofertas</span></a>\n                 </li>\n\n                <li class=\"nav-item\">\n                    <a class=\"nav-link\" ui-sref-active=\"active\" ui-sref=\"app.profile.main({ username: $ctrl.currentUser.username})\">\n                        <img ng-src=\"{{$ctrl.currentUser.image}}\" class=\"user-pic\" />\n                        {{ $ctrl.currentUser.username }}\n                    </a>\n                </li>\n                <li class=\"nav-item\">\n                        <a  ui-sref-active=\"active\" ui-sref=\"app.home\" class=\"btn btn-outline-danger\" ng-click=\"$ctrl.logout()\">\n                                <span>Log Out</span>\n                        </a>\n                    </li>\n            </ul>       \n          </nav>\n      </header>\n  </div> \n\n ");
-  $templateCache.put("list/list.details.html", "<div class=\"details-page\" >\n    <div ng-repeat=\"c in scope.computer\">\n      <div class=\"contentof\">\n          <div class=\"imageof\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n          <div class=\"nombre\">{{c.name}}</div>\n          <div class=\"nombre\">{{c.date}}</div>\n          <div class=\"nombre\">{{c.marca}}</div>\n          <div class=\"nombre\">{{c.status}}</div>\n          <div class=\"nombre\">{{c.type}}</div>\n            <div style=\"max-width:50%; max-height:50%;\" map-lazy-load=\"https://maps.google.com/maps/api/js\">\n              <ng-map default-style=\"true\"  zoom=\"7\" center=\"[38.3821778, -0.577064]\"> \n                    <marker ng-repeat=\"a in c.shop\"\n                    position=\"[{{a.latitude}}, {{a.longitude}}]\"\n                    data=\"{{data[$index]}}\"\n                    on-click=\"map.showInfoWindow(event, \'infow{{a.name}}{{$index}}\')\";\n                    title=\"pos: {{a.latitude}}, {{a.longitude}}\"></marker>\n                    <info-window id=\"infow{{a.name}}{{$index}}\" ng-repeat=\"a in c.shop\">\n                      <div style=\"color:black\" >\n                        Name: {{a.name}}<br/>\n                        <!-- latitude; {{a.latitude}}<br>\n                        longitude: {{a.longitude}}<br> -->\n                        Stock: {{a.stock}} Unidades\n                      </div>\n                    </info-window>\n              </ng-map>\n            </div>\n     </div>\n  </div>\n</div>");
+  $templateCache.put("list/list.details.html", "\n<div class=\"details-page\" >\n    <div class=\"contentof\">\n    <div ng-repeat=\"c in scope.computer\">\n          <div class=\"imageof\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n          <div class=\"nombre\">{{c.name}}</div>\n          <div class=\"nombre\">{{c.date}}</div>\n          <div class=\"nombre\">{{c.marca}}</div>\n          <div class=\"nombre\">{{c.status}}</div>\n          <div class=\"nombre\">{{c.type}}</div>\n            <div style=\"max-width:50%; max-height:50%;\" map-lazy-load=\"https://maps.google.com/maps/api/js\">\n              <ng-map default-style=\"true\"  zoom=\"7\" center=\"[38.3821778, -0.577064]\"> \n                    <marker ng-repeat=\"a in c.shop\"\n                    position=\"[{{a.latitude}}, {{a.longitude}}]\"\n                    data=\"{{data[$index]}}\"\n                    on-click=\"map.showInfoWindow(event, \'infow{{a.name}}{{$index}}\')\";\n                    title=\"pos: {{a.latitude}}, {{a.longitude}}\"></marker>\n                    <info-window id=\"infow{{a.name}}{{$index}}\" ng-repeat=\"a in c.shop\">\n                      <div style=\"color:black\" >\n                        Name: {{a.name}}<br/>\n                        <!-- latitude; {{a.latitude}}<br>\n                        longitude: {{a.longitude}}<br> -->\n                        Stock: {{a.stock}} Unidades\n                      </div>\n                    </info-window>\n              </ng-map>\n            </div>\n            <form action=\"http://localhost:8080/api/stripe\" method=\"POST\">\n              <script\n              src=\"https://checkout.stripe.com/checkout.js\" \n              class=\"stripe-button\"\n              data-key=\"pk_test_WMqiVRs7QV6k0qzCU7FCl3Ji\"\n              data-amount=\"0100\"\n              data-name=\"Pay with Stripe on FarmixShop\"\n              data-description=\"A VIP (5.00€)\"\n              data-image=\"/img/documentation/checkout/marketplace.png\"\n              data-label=\"Pay with Card\"\n              data-locale=\"auto\"\n              data-currency=\"eur\">\n              </script>\n            </form>\n     </div>\n    \n  </div>\n \n</div>\n");
   $templateCache.put("list/list.html", "<div class=\"list-page\" >\n  <div  style=\"padding-top:5%;\" class=\"ofertas\"></div>\n  <div  ng-repeat=\"c in scope.computer\">\n    <div class=\"tarjeta\">\n        <div class=\"nombre\">{{c.name}}</div>\n        <div class=\"imagen\"><img src=\"{{c.picture}}\" alt=\"\" height=\"150px\" width=\"150px\"></div>\n        <a  ui-sref-active=\"active\" ui-sref=\"app.details({ id: c._id})\" class=\"listb\"><span>Details</span></a>        \n        <div class=\"morei\">\n            <div> Precio- {{c.price}} </div>\n            <div> Tipo- {{c.type}} </div>\n            <div> Marca- {{c.marca}} </div>\n        </div>\n    </div>\n</div>\n</div>");
   $templateCache.put("profile/profile-articles.html", "<article-list limit=\"5\" list-config=\"$ctrl.listConfig\"></article-list>\n");
   $templateCache.put("profile/profile.html", "<div class=\"profile-page\">\n\n  <!-- User\'s basic info & action buttons -->\n  <div class=\"user-info\">\n    <div class=\"container\">\n      <div class=\"row\">\n        <div style=\"padding-top:5%; text-align:center;\">\n\n          <img ng-src=\"{{::$ctrl.profile.image}}\" class=\"user-img\" />\n          <h4 ng-bind=\"::$ctrl.profile.username\"></h4>\n          <p ng-bind=\"::$ctrl.profile.email\"></p>\n\n          <a ui-sref=\"app.settings\"\n            class=\"btn btn-sm btn-outline-secondary action-btn\"\n            ng-show=\"$ctrl.isUser\">\n            <i class=\"ion-gear-a\"></i> Edit Profile Settings\n          </a>\n        </div>\n      </div>\n    </div>\n  </div>\n\n</div>\n");
@@ -43611,7 +45271,7 @@ angular.module("templates", []).run(["$templateCache", function ($templateCache)
   $templateCache.put("components/buttons/follow-btn.html", "<button\n  class=\"btn btn-sm action-btn\"\n  ng-class=\"{ \'disabled\': $ctrl.isSubmitting,\n              \'btn-outline-secondary\': !$ctrl.user.following,\n              \'btn-secondary\': $ctrl.user.following }\"\n  ng-click=\"$ctrl.submit()\">\n  <i class=\"ion-plus-round\"></i>\n  &nbsp;\n  {{ $ctrl.user.following ? \'Unfollow\' : \'Follow\' }} {{ $ctrl.user.username }}\n</button>\n");
 }]);
 
-},{}],24:[function(require,module,exports){
+},{}],63:[function(require,module,exports){
 'use strict';
 
 authInterceptor.$inject = ["JWT", "AppConstants", "$window", "$q"];
@@ -43645,7 +45305,7 @@ function authInterceptor(JWT, AppConstants, $window, $q) {
 
 exports.default = authInterceptor;
 
-},{}],25:[function(require,module,exports){
+},{}],64:[function(require,module,exports){
 'use strict';
 
 ContactConfig.$inject = ["$stateProvider"];
@@ -43665,7 +45325,7 @@ function ContactConfig($stateProvider) {
 
 exports.default = ContactConfig;
 
-},{}],26:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43730,7 +45390,7 @@ ContactCtrl.$inject = ["AppConstants", "$scope", "Contactservice", "$state", "to
 
 exports.default = ContactCtrl;
 
-},{}],27:[function(require,module,exports){
+},{}],66:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43767,7 +45427,7 @@ ContactModule.controller('ContactCtrl', _contact4.default);
 
 exports.default = ContactModule;
 
-},{"./contact.config":25,"./contact.controller":26,"angular":5}],28:[function(require,module,exports){
+},{"./contact.config":64,"./contact.controller":65,"angular":12}],67:[function(require,module,exports){
 'use strict';
 
 EditorConfig.$inject = ["$stateProvider"];
@@ -43808,7 +45468,7 @@ function EditorConfig($stateProvider) {
 
 exports.default = EditorConfig;
 
-},{}],29:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43876,7 +45536,7 @@ var EditorCtrl = function () {
 
 exports.default = EditorCtrl;
 
-},{}],30:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43910,7 +45570,7 @@ editorModule.controller('EditorCtrl', _editor4.default);
 
 exports.default = editorModule;
 
-},{"./editor.config":28,"./editor.controller":29,"angular":5}],31:[function(require,module,exports){
+},{"./editor.config":67,"./editor.controller":68,"angular":12}],70:[function(require,module,exports){
 'use strict';
 
 HomeConfig.$inject = ["$stateProvider"];
@@ -43931,7 +45591,7 @@ function HomeConfig($stateProvider) {
 
 exports.default = HomeConfig;
 
-},{}],32:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43940,10 +45600,8 @@ Object.defineProperty(exports, "__esModule", {
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
-var HomeCtrl = function HomeCtrl(Computerservice, AppConstants, $scope) {
+var HomeCtrl = function HomeCtrl(Computerservice, AppConstants, $scope, $window) {
   'ngInject';
-
-  var _this = this;
 
   _classCallCheck(this, HomeCtrl);
 
@@ -43952,18 +45610,24 @@ var HomeCtrl = function HomeCtrl(Computerservice, AppConstants, $scope) {
   this._Computerservice = Computerservice;
 
   // Get list of all tags
-  this._Computerservice.getAll().then(function (computer) {
-    _this.computer = true;
-    console.log(computer);
-    //console.log(User.current);//null
-    _this.computer = computer;
-  });
+  /*this._Computerservice.getAll().then(
+     (computer) => {
+     this.computer = true;
+       console.log(computer);
+       //console.log(User.current);//null
+       this.computer = computer;
+     }
+   );  */
+  $scope.search = function () {
+    console.log($scope.keywords);
+    $window.location.href = '/#!/list/' + $scope.keywords;
+  };
 };
-HomeCtrl.$inject = ["Computerservice", "AppConstants", "$scope"];
+HomeCtrl.$inject = ["Computerservice", "AppConstants", "$scope", "$window"];
 
 exports.default = HomeCtrl;
 
-},{}],33:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -43997,7 +45661,7 @@ homeModule.controller('HomeCtrl', _home4.default);
 
 exports.default = homeModule;
 
-},{"./home.config":31,"./home.controller":32,"angular":5}],34:[function(require,module,exports){
+},{"./home.config":70,"./home.controller":71,"angular":12}],73:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44025,7 +45689,7 @@ var AppFooter = {
 
 exports.default = AppFooter;
 
-},{}],35:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44058,7 +45722,7 @@ var AppHeader = {
 
 exports.default = AppHeader;
 
-},{}],36:[function(require,module,exports){
+},{}],75:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44090,7 +45754,7 @@ layoutModule.component('appFooter', _footer2.default);
 
 exports.default = layoutModule;
 
-},{"./footer.component":34,"./header.component":35,"angular":5}],37:[function(require,module,exports){
+},{"./footer.component":73,"./header.component":74,"angular":12}],76:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44130,7 +45794,7 @@ listModule.controller('DetailsCtrl', _listDetails2.default);
 
 exports.default = listModule;
 
-},{"./list.config":38,"./list.controller":39,"./list.details.controller":40,"angular":5}],38:[function(require,module,exports){
+},{"./list.config":77,"./list.controller":78,"./list.details.controller":79,"angular":12}],77:[function(require,module,exports){
 'use strict';
 
 ListConfig.$inject = ["$stateProvider"];
@@ -44176,7 +45840,7 @@ function ListConfig($stateProvider) {
 
 exports.default = ListConfig;
 
-},{}],39:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -44216,7 +45880,7 @@ ListCtrl.$inject = ["User", "Computerservice", "categorias", "AppConstants", "$s
 
 exports.default = ListCtrl;
 
-},{}],40:[function(require,module,exports){
+},{}],79:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44232,6 +45896,7 @@ var DetailsCtrl = function DetailsCtrl(User, $stateParams, AppConstants, $scope,
 
   _classCallCheck(this, DetailsCtrl);
 
+  Stripe.setPublishableKey('pk_test_WMqiVRs7QV6k0qzCU7FCl3Ji');
   this.details = details;
   this._Computerservice = Computerservice;
   this._$scope = $scope;
@@ -44256,7 +45921,7 @@ DetailsCtrl.$inject = ["User", "$stateParams", "AppConstants", "$scope", "detail
 
 exports.default = DetailsCtrl;
 
-},{}],41:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44296,7 +45961,7 @@ profileModule.controller('ProfileArticlesCtrl', _profileArticles2.default);
 
 exports.default = profileModule;
 
-},{"./profile-articles.controller":42,"./profile.config":43,"./profile.controller":44,"angular":5}],42:[function(require,module,exports){
+},{"./profile-articles.controller":81,"./profile.config":82,"./profile.controller":83,"angular":12}],81:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44328,7 +45993,7 @@ ProfileArticlesCtrl.$inject = ["profile", "$state", "$rootScope"];
 
 exports.default = ProfileArticlesCtrl;
 
-},{}],43:[function(require,module,exports){
+},{}],82:[function(require,module,exports){
 'use strict';
 
 ProfileConfig.$inject = ["$stateProvider"];
@@ -44370,7 +46035,7 @@ function ProfileConfig($stateProvider) {
 
 exports.default = ProfileConfig;
 
-},{}],44:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44400,7 +46065,7 @@ ProfileCtrl.$inject = ["profile", "User"];
 
 exports.default = ProfileCtrl;
 
-},{}],45:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44516,7 +46181,7 @@ var Articles = function () {
 
 exports.default = Articles;
 
-},{}],46:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44577,7 +46242,7 @@ var Comments = function () {
 
 exports.default = Comments;
 
-},{}],47:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44635,6 +46300,13 @@ var Computer = function () {
       console.log(res);
       // return res.data;
     }
+  }, {
+    key: 'homeSearch',
+    value: function homeSearch(type) {
+      return this._$http({
+        url: 'http://localhost:8081/#!/list/' + type
+      });
+    }
   }]);
 
   return Computer;
@@ -44642,7 +46314,7 @@ var Computer = function () {
 
 exports.default = Computer;
 
-},{}],48:[function(require,module,exports){
+},{}],87:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44687,7 +46359,7 @@ var Contactservice = function () {
 
 exports.default = Contactservice;
 
-},{}],49:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44753,7 +46425,7 @@ servicesModule.service('Computerservice', _computer2.default);
 
 exports.default = servicesModule;
 
-},{"./articles.service":45,"./comments.service":46,"./computer.service":47,"./contact-service":48,"./jwt.service":50,"./profile.service":51,"./tags.service":52,"./user.service":53,"angular":5}],50:[function(require,module,exports){
+},{"./articles.service":84,"./comments.service":85,"./computer.service":86,"./contact-service":87,"./jwt.service":89,"./profile.service":90,"./tags.service":91,"./user.service":92,"angular":12}],89:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44797,7 +46469,7 @@ var JWT = function () {
 
 exports.default = JWT;
 
-},{}],51:[function(require,module,exports){
+},{}],90:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44836,7 +46508,7 @@ var Profile = function () {
 
 exports.default = Profile;
 
-},{}],52:[function(require,module,exports){
+},{}],91:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44875,7 +46547,7 @@ var Tags = function () {
 
 exports.default = Tags;
 
-},{}],53:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -44997,7 +46669,7 @@ var User = function () {
 
 exports.default = User;
 
-},{}],54:[function(require,module,exports){
+},{}],93:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -45030,7 +46702,7 @@ settingsModule.controller('SettingsCtrl', _settings4.default);
 
 exports.default = settingsModule;
 
-},{"./settings.config":55,"./settings.controller":56,"angular":5}],55:[function(require,module,exports){
+},{"./settings.config":94,"./settings.controller":95,"angular":12}],94:[function(require,module,exports){
 'use strict';
 
 SettingsConfig.$inject = ["$stateProvider"];
@@ -45056,7 +46728,7 @@ function SettingsConfig($stateProvider) {
 
 exports.default = SettingsConfig;
 
-},{}],56:[function(require,module,exports){
+},{}],95:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, "__esModule", {
@@ -45116,4 +46788,4 @@ var SettingsCtrl = function () {
 
 exports.default = SettingsCtrl;
 
-},{}]},{},[7]);
+},{}]},{},[45]);

@@ -32,6 +32,12 @@ export default class Computer {
     }).then((res) => res.data);
    console.log(res);
  // return res.data;
+
+}
+homeSearch(type){
+  return this._$http({
+    url: 'http://localhost:8081/#!/list/' + type,
+  });
 }
 
 }

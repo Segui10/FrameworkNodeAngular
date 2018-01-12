@@ -14,6 +14,7 @@
   },
   "license": "ISC",
   "dependencies": {
+    "angular-stripe": "^5.0.0",
     "body-parser": "1.15.0",
     "cors": "2.7.1",
     "dotenv": "^4.0.0",

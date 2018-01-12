@@ -9,7 +9,6 @@ function getTokenFromHeader(req){
 
   return null;
 }
-
 var auth = {
   required: jwt({
     secret: secret,

@@ -5,6 +5,14 @@ var User = mongoose.model('User');
 var FacebookStrategy = require('passport-facebook').Strategy;
 var TwitterStrategy = require('passport-twitter').Strategy;
 
+passport.serializeUser(function(user, done) {
+  done(null, user);
+});
+
+passport.deserializeUser(function (user, done) {
+      done(null, user);
+  });
+
 passport.use(new LocalStrategy({
   usernameField: 'user[email]',
   passwordField: 'user[password]'
@@ -19,16 +27,22 @@ passport.use(new LocalStrategy({
 }));
 
 passport.use(new FacebookStrategy({
-  clientID: '1254180701333955',
-  clientSecret: 'd192755559842c15752ce48ed1fbfb40',
-  callbackURL: 'http://localhost:8081/#!/'
 },
-function(accessToken, refreshToken, profile, cb) {
-  User.findOrCreate({ facebookId: profile.id }, function (err, user) {
-    console.log(user);
-    return cb(err, user);
-    
-  });
+function(req, accessToken, refreshToken, profile, done) {
+  console.log(profile);
+  User.findOne({email: profile.id}).then(function(user){
+    if(user){
+      return done(null, user);
+    }else{
+      nUser=new User();
+      nUser.username=profile.displayName;
+      nUser.email= profile.id;
+      console.log(nUser);
+      nUser.save().then(function(){
+        return done(null, user);
+      }).catch(done);
+    }
+  }).catch(done);
 }
 ));
 

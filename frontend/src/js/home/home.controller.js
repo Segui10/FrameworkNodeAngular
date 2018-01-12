@@ -1,5 +1,5 @@
 class HomeCtrl {
-  constructor( Computerservice, AppConstants, $scope) {
+  constructor( Computerservice, AppConstants, $scope,  $window) {
     'ngInject';
 
     this.appName = AppConstants.appName;
@@ -7,14 +7,18 @@ class HomeCtrl {
     this._Computerservice = Computerservice;
 
     // Get list of all tags
-     this._Computerservice.getAll().then(
+     /*this._Computerservice.getAll().then(
         (computer) => {
         this.computer = true;
           console.log(computer);
           //console.log(User.current);//null
           this.computer = computer;
         }
-      );  
+      );  */
+      $scope.search= function(){
+        console.log($scope.keywords);
+        $window.location.href = '/#!/list/'+$scope.keywords;
+      }
   }
 }
 

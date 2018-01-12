@@ -1,3 +1,29 @@
+Skip to content
+This repository
+Search
+Pull requests
+Issues
+Marketplace
+Explore
+ @Segui10
+ Sign out
+ Watch 0
+  Star 0  Fork 0 Segui10/FrameworkNodeAngular
+ Code  Issues 0  Pull requests 0  Projects 0  Wiki  Insights  Settings
+Branch: master Find file Copy pathFrameworkNodeAngular/frontend/build/main.css
+aefc080  3 days ago
+@Segui10 Segui10 CSS update 2
+1 contributor
+Dismiss
+We found potential security vulnerabilities in your dependencies.
+Some of the dependencies defined in your package-lock.json have known security vulnerabilities and should be updated.
+
+Review vulnerable dependencies
+Only the owner of this repository can see this message.
+Learn more about vulnerability alerts
+
+RawBlameHistory    
+Executable File  3885 lines (3110 sloc)  67.8 KB
 @import url(font-awesome.min.css);
 @import url("https://fonts.googleapis.com/css?family=Open+Sans:400,400italic,600,600italic,800,800italic");
 
@@ -2392,6 +2418,9 @@
 			border: 1.5px solid white;
 		}
 		
+		.features h1{
+			font-size: 14px;
+		}
 		li p{
 			color:white;
 		}
@@ -3833,7 +3862,7 @@
 		float: left;
 		padding-top: 5px;
 		background-color: #505393;
-		height: 200px;
+		height: 205px;
 		width: 49%;
 	}
 	.imagen{
@@ -3848,10 +3877,10 @@
 		margin-top: 0px;
 		font-size: 20px;
 		padding: 5px;
-		padding-right: 120px;
-		margin-left: 10px;
+		width: 98%;
+		margin-bottom: 6px;
 		background-color: #3a3c6a;
-		float: left;
+		margin-left: 1%;
 		display: inline-block;
 	}
 
@@ -3874,4 +3903,12 @@
 	height: 300px;
 	width: 300px;
 	float: left;
+}
+
+.listb{
+	padding: 60px;
+	background-color: #6C6F9E;
+	float: right;
+	margin-right: 1%;
+	text-decoration: none;
 }

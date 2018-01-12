@@ -50,6 +50,25 @@ router.put('/user', auth.required, function(req, res, next){
   }).catch(next);
 });
 
+router.post('/users', function(req, res, next){
+  let memorystore = req.sessionStore;
+  let sessions = memorystore.sessions;
+  let sessionUser;
+  for(var key in sessions){
+    sessionUser = (JSON.parse(sessions[key]).passport.user);
+  }
+    var user = new User();
+    user.email = sessionUser.email;
+    user.username = sessionUser.username;
+
+    if(user){
+      user.token = user.generateJWT();
+      return res.json({user: user.toAuthJSON()});
+    } else {
+      return res.status(422).json('fail');
+    }
+})
+
 router.post('/users/login', function(req, res, next){
   if(!req.body.user.email){
     return res.status(422).json({errors: {email: "can't be blank"}});
@@ -83,6 +102,20 @@ router.post('/users', function(req, res, next){
   }).catch(next);
 });
 
+/*----FACEBOOK----*/
+router.get('/facebook', passport.authenticate('facebook', {scope: ['email', 'public_profile']}));
+router.get('/auth/facebook/callback',
+    passport.authenticate('facebook',
+    { successRedirect: 'http://localhost:8081/#!/social', failureRedirect: 'http://localhost:8081/#!/register' }));
+
+/*----TWITTER----*/
+router.get('/api/twitter', passport.authenticate('twitter'));
+router.get('/api/auth/twitter/callback',
+    passport.authenticate('twitter',
+    { successRedirect: 'http://localhost:8081/#!/social', failureRedirect: 'http://localhost:8081/#!/register' }));
+
+/*----ROUTE TO RETURN SOCIAL LOGGED USER----*/
+//router.get('/api/auth/success', usersController.success);
 
 
 module.exports = router;
