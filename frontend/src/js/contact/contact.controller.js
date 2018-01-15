@@ -22,7 +22,7 @@ class ContactCtrl {
       var data = {
               name: scope.inputName,
               from: scope.inputEmail,
-              to: 'segui654@gmail.com',
+              to: 'segui.guerola@gmail.com',
               subject: scope.inputSubject,
               text: scope.inputMessage,
               type: 'admin'

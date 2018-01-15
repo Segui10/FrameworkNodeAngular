@@ -1,7 +1,7 @@
 class DetailsCtrl {
     constructor(User, $stateParams, AppConstants, $scope, details, Computerservice) {
       'ngInject';
-      Stripe.setPublishableKey('pk_test_WMqiVRs7QV6k0qzCU7FCl3Ji');
+    
       this.details = details;
       this._Computerservice = Computerservice;
       this._$scope = $scope;

@@ -26,7 +26,12 @@ passport.use(new LocalStrategy({
   }).catch(done);
 }));
 
+// 
+
 passport.use(new FacebookStrategy({
+  clientID: 'api',
+  clientSecret: 'api',
+  callbackURL: 'http://localhost:8080/api/auth/facebook/callback'
 },
 function(req, accessToken, refreshToken, profile, done) {
   console.log(profile);
@@ -36,6 +41,29 @@ function(req, accessToken, refreshToken, profile, done) {
     }else{
       nUser=new User();
       nUser.username=profile.displayName;
+      nUser.email= profile.id;
+      console.log(nUser);
+      nUser.save().then(function(){
+        return done(null, user);
+      }).catch(done);
+    }
+  }).catch(done);
+}
+));
+
+passport.use(new TwitterStrategy({
+  consumerKey: 	'api',
+  consumerSecret: 'api',
+  callbackURL: 'http://localhost:8080/api/auth/twitter/callback',
+  passReqToCallback: true
+},function(req, token, tokenSecret, profile, done) {
+  console.log(profile);
+  User.findOne({email: profile.id}).then(function(user){
+    if(user){
+      return done(null, user);
+    }else{
+      nUser=new User();
+      nUser.username=profile.username;
       nUser.email= profile.id;
       console.log(nUser);
       nUser.save().then(function(){

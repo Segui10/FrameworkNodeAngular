@@ -6,6 +6,7 @@ import appConfig  from './config/app.config';
 import appRun     from './config/app.run';
 import 'ngmap';
 import 'angular-stripe';
+// import 'angular-bootstrap-modal';
 import toastr from 'angular-toastr';
 //import 'passport-facebook';
 import 'angular-ui-router';

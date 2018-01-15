@@ -12,6 +12,7 @@ class AppHeaderCtrl {
   }
 }
 
+
 let AppHeader = {
   controller: AppHeaderCtrl,
   templateUrl: 'layout/header.html'

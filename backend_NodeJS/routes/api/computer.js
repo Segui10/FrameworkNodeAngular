@@ -7,6 +7,7 @@ console.log('Computer');
 router.get('/', function(req, res, next) {
   //console.log(Computer.find());
   Computer.find().then(function(computer){
+    console.log(computer);
     return res.json({computer: computer});
   }).catch(next);
 });

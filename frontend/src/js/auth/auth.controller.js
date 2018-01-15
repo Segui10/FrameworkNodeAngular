@@ -3,7 +3,6 @@ class AuthCtrl {
     'ngInject';
 
     this._User = User;
-
     this.title = $state.current.title;
     this.authType = $state.current.name.replace('app.', '');
     this._$state = $state;

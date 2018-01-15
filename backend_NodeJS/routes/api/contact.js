@@ -7,7 +7,7 @@ router.post('/', function(req, res) {
     console.log('Dentro');
 
     const sgMail = require('@sendgrid/mail');
-	sgMail.setApiKey('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');
+	sgMail.setApiKey('api');
 	const msg = {
 	  to: req.body.to,
 	  from: req.body.from,

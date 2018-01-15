@@ -25,20 +25,21 @@
                     </info-window>
               </ng-map>
             </div>
-            <form action="http://localhost:8080/api/stripe" method="POST">
+            <form action="http://localhost:8080/api/charge" method="POST">
+              <input type="hidden" name="payment" value="{{c._id}}">
               <script
               src="https://checkout.stripe.com/checkout.js" 
               class="stripe-button"
-              data-key="pk_test_WMqiVRs7QV6k0qzCU7FCl3Ji"
-              data-amount="0100"
+              data-key="api"
+              data-amount="320"
               data-name="Pay with Stripe on FarmixShop"
-              data-description="A VIP (5.00€)"
-              data-image="/img/documentation/checkout/marketplace.png"
-              data-label="Pay with Card"
+              data-description="A VIP (3.00€)"
+              data-image="https://stripe.com/img/documentation/checkout/marketplace.png"
+              data-label="Pay with Card Credit"
               data-locale="auto"
               data-currency="eur">
               </script>
-            </form>
+          </form>
      </div>
     
   </div>
